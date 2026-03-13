@@ -7,7 +7,8 @@ import copy
 import json
 import math
 import pygame
-from pygame.locals import DOUBLEBUF, OPENGL, QUIT, KEYDOWN, K_ESCAPE, K_z, K_q, K_s, K_d, K_SPACE, K_c, K_DELETE, K_t
+import pygame_gui
+from pygame.locals import DOUBLEBUF, OPENGL, QUIT, KEYDOWN, K_z, K_q, K_s, K_d, K_SPACE, K_c, K_DELETE, K_t
 from OpenGL.GL import *
 from OpenGL.GLU import gluPerspective
 
@@ -47,6 +48,8 @@ tex_click_pos   = None   # (u, v) normalisé 0-1 du dernier clic dans l'aperçu
 selected_quad_idx = -1
 gizmo_mode        = 'translate'   # 'translate' | 'rotate' | 'scale'
 GIZMO_MODES       = ['translate', 'rotate', 'scale']
+translate_snap    = 0.5           # pas de la translation
+scale_snap        = 0.5           # pas du redimensionnement
 
 # État drag partagé
 dragging_axis    = None   # axe ('x','y','z') ou handle ('width','height','uniform')
@@ -350,7 +353,7 @@ def update_translate_drag(mx, my):
     if dragging_axis is None or drag_start_verts is None: return
     center=quad_center(drag_start_verts);  axis_dir=GIZMO_AXES[dragging_axis][0]
     t=ray_line_closest_s(tuple(cam_pos),screen_ray(mx-PANEL_WIDTH,my),center,axis_dir)
-    move=vscale(axis_dir,round((t-drag_axis_t0)*2)/2)
+    move=vscale(axis_dir,round((t-drag_axis_t0)/translate_snap)*translate_snap)
     quads[selected_quad_idx]=[vadd(v,move) for v in drag_start_verts]
 
 # ── Drag rotation ──────────────────────────────────────────────────────────────
@@ -388,7 +391,7 @@ def start_scale_drag(handle, mx, my):
 def update_scale_drag(mx, my):
     if dragging_axis is None or drag_start_verts is None: return
     ray_o=tuple(cam_pos);  ray_d=screen_ray(mx-PANEL_WIDTH,my)
-    snap=lambda x: max(0.5, round(x*2)/2)
+    snap=lambda x: max(scale_snap, round(x/scale_snap)*scale_snap)
     if dragging_axis=='width':
         t=ray_line_closest_s(ray_o,ray_d,drag_center,drag_wa)
         new_hw=snap(drag_hw0+(t-drag_axis_t0));  new_hh=drag_hh0
@@ -427,14 +430,6 @@ def load_texture(path):
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR)
     glBindTexture(GL_TEXTURE_2D,0);  return tex,w,h
 
-def make_text_texture(font, text, color=(255,255,255)):
-    surf=font.render(text,True,color);  w,h=surf.get_size()
-    data=pygame.image.tobytes(surf,"RGBA",True)
-    tex=glGenTextures(1);  glBindTexture(GL_TEXTURE_2D,tex)
-    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,data)
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR)
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR)
-    glBindTexture(GL_TEXTURE_2D,0);  return tex,w,h
 
 def begin_2d():
     glViewport(0,0,TOTAL_WIDTH,HEIGHT)
@@ -464,21 +459,6 @@ def draw_texture(tex_id,x,y,w,h):
     glEnd()
     glDisable(GL_TEXTURE_2D);  glDisable(GL_BLEND)
 
-BTN = {"x":15,"y":15,"w":220,"h":36}
-MODE_INFO = {
-    'translate': ("Gizmo : Translation",  (120,200,120)),
-    'rotate':    ("Gizmo : Rotation",     (200,140, 80)),
-    'scale':     ("Gizmo : Taille",       (180,100,220)),
-}
-
-def draw_panel(btn_hovered,btn_tex,btn_tex_w,btn_tex_h,mode_tex,mode_tex_w,mode_tex_h):
-    draw_rect(0,0,PANEL_WIDTH,HEIGHT,0.10,0.10,0.13)
-    draw_rect(PANEL_WIDTH-1,0,1,HEIGHT,0.22,0.22,0.28)
-    b=BTN
-    draw_rect(b["x"],b["y"],b["w"],b["h"],*(0.35,0.55,0.85) if btn_hovered else (0.22,0.40,0.70))
-    draw_texture(btn_tex,b["x"]+(b["w"]-btn_tex_w)//2,b["y"]+(b["h"]-btn_tex_h)//2,btn_tex_w,btn_tex_h)
-    if selected_quad_idx>=0:
-        draw_texture(mode_tex,b["x"],b["y"]+b["h"]+10,mode_tex_w,mode_tex_h)
 
 # ── Fenêtre aperçu texture ─────────────────────────────────────────────────────
 def open_tex_preview():
@@ -510,7 +490,7 @@ def _pick_quad(mx,my):
 
 def main():
     global cam_pos,cam_yaw,cam_pitch
-    global selected_quad_idx,gizmo_mode
+    global selected_quad_idx,gizmo_mode,translate_snap,scale_snap
     global quad_texture,atlas_w,atlas_h,tex_preview_win,tex_preview_sz,tex_click_pos
     global dragging_axis,drag_start_verts,drag_axis_t0
     global drag_angle0,drag_plane_u,drag_plane_v,drag_center
@@ -522,27 +502,47 @@ def main():
     glEnable(GL_DEPTH_TEST);  glClearColor(0.08,0.08,0.12,1.0)
     quad_texture,atlas_w,atlas_h=load_texture(TEXTURE_PATH)
 
-    font    = pygame.font.SysFont("segoeui",15)
-    font_sm = pygame.font.SysFont("segoeui",13)
-    btn_tex,btn_tex_w,btn_tex_h = make_text_texture(font,"add quad")
-
-    def make_mode_tex():
-        label,col = MODE_INFO[gizmo_mode]
-        return make_text_texture(font_sm,f"[ Espace ]  {label}",col)
-
-    mode_tex,mode_tex_w,mode_tex_h = make_mode_tex()
+    ui_surface = pygame.Surface((PANEL_WIDTH, HEIGHT), pygame.SRCALPHA)
+    ui_manager = pygame_gui.UIManager((PANEL_WIDTH, HEIGHT))
+    btn_add = pygame_gui.elements.UIButton(
+        relative_rect=pygame.Rect(15, 15, 220, 36),
+        text="Ajouter quad", manager=ui_manager)
+    dropdown_gizmo = pygame_gui.elements.UIDropDownMenu(
+        options_list=['translate', 'rotate', 'scale'],
+        starting_option=gizmo_mode,
+        relative_rect=pygame.Rect(15, 60, 220, 36),
+        manager=ui_manager)
+    dropdown_snap = pygame_gui.elements.UIDropDownMenu(
+        options_list=['1', '0.5', '0.25', '0.1'],
+        starting_option=str(translate_snap),
+        relative_rect=pygame.Rect(15, 108, 220, 36),
+        manager=ui_manager)
+    dropdown_scale_snap = pygame_gui.elements.UIDropDownMenu(
+        options_list=['1', '0.5', '0.25', '0.1'],
+        starting_option=str(scale_snap),
+        relative_rect=pygame.Rect(15, 156, 220, 36),
+        manager=ui_manager)
+    ui_tex = glGenTextures(1)
     clock=pygame.time.Clock();  running=True
 
     while running:
         dt=clock.tick(60)/1000.0
         mx,my=pygame.mouse.get_pos()
         in_3d=mx>=PANEL_WIDTH
-        btn_hovered=(BTN["x"]<=mx<=BTN["x"]+BTN["w"] and BTN["y"]<=my<=BTN["y"]+BTN["h"])
 
         for event in pygame.event.get():
+            ui_manager.process_events(event)
+            if event.type==pygame_gui.UI_BUTTON_PRESSED and event.ui_element==btn_add:
+                add_quad()
+            if event.type==pygame_gui.UI_DROP_DOWN_MENU_CHANGED and event.ui_element==dropdown_gizmo:
+                gizmo_mode=event.text;  dragging_axis=None
+            if event.type==pygame_gui.UI_DROP_DOWN_MENU_CHANGED and event.ui_element==dropdown_snap:
+                translate_snap=float(event.text)
+            if event.type==pygame_gui.UI_DROP_DOWN_MENU_CHANGED and event.ui_element==dropdown_scale_snap:
+                scale_snap=float(event.text)
             if event.type==QUIT: running=False
             if event.type==KEYDOWN:
-                if event.key==K_ESCAPE: running=False
+
                 if event.key==K_t and selected_quad_idx>=0:
                     if tex_preview_win: close_tex_preview()
                     else:               open_tex_preview()
@@ -556,14 +556,11 @@ def main():
                     selected_quad_idx=len(quads)-1
                 if event.key==K_SPACE and selected_quad_idx>=0:
                     gizmo_mode=GIZMO_MODES[(GIZMO_MODES.index(gizmo_mode)+1)%3]
-                    mode_tex,mode_tex_w,mode_tex_h=make_mode_tex()
                     dragging_axis=None
 
             if (event.type==pygame.MOUSEBUTTONDOWN and event.button==1
                     and not (tex_preview_win and getattr(event,'window',None) is tex_preview_win)):
-                if btn_hovered:
-                    add_quad()
-                elif in_3d:
+                if in_3d:
                     if gizmo_mode=='translate':
                         axis=pick_translate_axis(mx,my)
                         if axis: start_translate_drag(axis,mx,my)
@@ -573,13 +570,13 @@ def main():
                         if axis: start_rotate_drag(axis,mx,my)
                         else:
                             selected_quad_idx=_pick_quad(mx,my)
-                            gizmo_mode='translate';  mode_tex,mode_tex_w,mode_tex_h=make_mode_tex()
+                            gizmo_mode='translate'
                     else:  # scale
                         handle=pick_scale_handle(mx,my)
                         if handle: start_scale_drag(handle,mx,my)
                         else:
                             selected_quad_idx=_pick_quad(mx,my)
-                            gizmo_mode='translate';  mode_tex,mode_tex_w,mode_tex_h=make_mode_tex()
+                            gizmo_mode='translate'
 
             if event.type==pygame.MOUSEBUTTONUP and event.button==1:
                 dragging_axis=None;  drag_start_verts=None
@@ -639,13 +636,25 @@ def main():
             else:                         draw_scale_gizmo(q,dragging_axis)
 
         # ── Rendu 2D ──────────────────────────────────────────────────────────
+        ui_manager.update(dt)
+        ui_surface.fill((0, 0, 0, 0))
+        ui_manager.draw_ui(ui_surface)
+        data = pygame.image.tobytes(ui_surface, "RGBA", True)
+        glBindTexture(GL_TEXTURE_2D, ui_tex)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, PANEL_WIDTH, HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glBindTexture(GL_TEXTURE_2D, 0)
         begin_2d()
-        draw_panel(btn_hovered,btn_tex,btn_tex_w,btn_tex_h,mode_tex,mode_tex_w,mode_tex_h)
+        draw_rect(0, 0, PANEL_WIDTH, HEIGHT, 0.10, 0.10, 0.13)
+        draw_texture(ui_tex, 0, 0, PANEL_WIDTH, HEIGHT)
+        draw_rect(PANEL_WIDTH-1, 0, 1, HEIGHT, 0.22, 0.22, 0.28)
         end_2d()
         pygame.display.flip()
 
     close_tex_preview()
-    glDeleteTextures(1,[btn_tex]);  glDeleteTextures(1,[mode_tex]);  glDeleteTextures(1,[quad_texture])
+    ui_manager.clear_and_reset()
+    glDeleteTextures(1, [ui_tex]);  glDeleteTextures(1, [quad_texture])
     pygame.quit()
 
 
