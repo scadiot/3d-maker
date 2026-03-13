@@ -4,6 +4,7 @@ Navigation : ZQSD déplacer, molette orienter, Espace alterner gizmos, Échap qu
 """
 
 import copy
+import json
 import math
 import pygame
 from pygame.locals import DOUBLEBUF, OPENGL, QUIT, KEYDOWN, K_ESCAPE, K_z, K_q, K_s, K_d, K_SPACE, K_c, K_DELETE, K_t
@@ -18,6 +19,7 @@ TOTAL_WIDTH = PANEL_WIDTH + VIEW_WIDTH
 FOV         = 60.0
 NEAR, FAR      = 0.05, 2000.0
 TEXTURE_PATH   = r"C:\Dev\Paris\assets\textures\result.png"
+ATLAS_JSON     = r"C:\Dev\Paris\assets\textures\test.json"
 PREVIEW_MAX_SZ = 512
 
 # ── Caméra ─────────────────────────────────────────────────────────────────────
@@ -27,9 +29,16 @@ cam_pitch = -20.0
 MOVE_SPEED        = 8.0
 MOUSE_SENSITIVITY = 0.15
 
+# ── Atlas ──────────────────────────────────────────────────────────────────────
+with open(ATLAS_JSON, encoding="utf-8") as _f:
+    atlas_data = json.load(_f)   # {"images": [{x, y, width, height, path}, ...]}
+
 # ── Monde ──────────────────────────────────────────────────────────────────────
 quads           = []
+quad_uvs        = []   # UVs par quad : [(u0,v0),(u1,v0),(u1,v1),(u0,v1)]
 quad_texture    = 0
+atlas_w         = 1
+atlas_h         = 1
 tex_preview_win = None
 tex_preview_sz  = 0
 tex_click_pos   = None   # (u, v) normalisé 0-1 du dernier clic dans l'aperçu
@@ -305,15 +314,16 @@ def add_quad():
         (cx-1,0.0,cz-1),(cx+1,0.0,cz-1),
         (cx+1,0.0,cz+1),(cx-1,0.0,cz+1),
     ])
+    quad_uvs.append([(0.0,0.0),(1.0,0.0),(1.0,1.0),(0.0,1.0)])
 
 def draw_quads():
-    QUAD_UVS=[(0,0),(1,0),(1,1),(0,1)]
     for i,quad in enumerate(quads):
         sel=(i==selected_quad_idx)
+        uvs=quad_uvs[i] if i<len(quad_uvs) else [(0,0),(1,0),(1,1),(0,1)]
         glEnable(GL_TEXTURE_2D);  glBindTexture(GL_TEXTURE_2D,quad_texture)
         glColor3f(1.0,1.0,1.0)
         glBegin(GL_QUADS)
-        for (vx,vy,vz),(u,v) in zip(quad,QUAD_UVS):
+        for (vx,vy,vz),(u,v) in zip(quad,uvs):
             glTexCoord2f(u,v);  glVertex3f(vx,vy,vz)
         glEnd()
         glDisable(GL_TEXTURE_2D)
@@ -411,7 +421,7 @@ def load_texture(path):
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,data)
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR)
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR)
-    glBindTexture(GL_TEXTURE_2D,0);  return tex
+    glBindTexture(GL_TEXTURE_2D,0);  return tex,w,h
 
 def make_text_texture(font, text, color=(255,255,255)):
     surf=font.render(text,True,color);  w,h=surf.get_size()
@@ -497,7 +507,7 @@ def _pick_quad(mx,my):
 def main():
     global cam_pos,cam_yaw,cam_pitch
     global selected_quad_idx,gizmo_mode
-    global quad_texture,tex_preview_win,tex_preview_sz,tex_click_pos
+    global quad_texture,atlas_w,atlas_h,tex_preview_win,tex_preview_sz,tex_click_pos
     global dragging_axis,drag_start_verts,drag_axis_t0
     global drag_angle0,drag_plane_u,drag_plane_v,drag_center
     global drag_hw0,drag_hh0,drag_wa,drag_ha
@@ -506,7 +516,7 @@ def main():
     pygame.display.set_mode((TOTAL_WIDTH,HEIGHT),DOUBLEBUF|OPENGL)
     pygame.display.set_caption("3D Viewer")
     glEnable(GL_DEPTH_TEST);  glClearColor(0.08,0.08,0.12,1.0)
-    quad_texture=load_texture(TEXTURE_PATH)
+    quad_texture,atlas_w,atlas_h=load_texture(TEXTURE_PATH)
 
     font    = pygame.font.SysFont("segoeui",15)
     font_sm = pygame.font.SysFont("segoeui",13)
@@ -533,11 +543,12 @@ def main():
                     if tex_preview_win: close_tex_preview()
                     else:               open_tex_preview()
                 if event.key==K_DELETE and selected_quad_idx>=0:
-                    quads.pop(selected_quad_idx)
+                    quads.pop(selected_quad_idx);  quad_uvs.pop(selected_quad_idx)
                     selected_quad_idx=-1
                     dragging_axis=None
                 if event.key==K_c and selected_quad_idx>=0:
                     quads.append(copy.deepcopy(quads[selected_quad_idx]))
+                    quad_uvs.append(list(quad_uvs[selected_quad_idx]))
                     selected_quad_idx=len(quads)-1
                 if event.key==K_SPACE and selected_quad_idx>=0:
                     gizmo_mode=GIZMO_MODES[(GIZMO_MODES.index(gizmo_mode)+1)%3]
@@ -570,8 +581,17 @@ def main():
 
             if event.type==pygame.MOUSEBUTTONDOWN and event.button==1:
                 if tex_preview_win and getattr(event,'window',None)==tex_preview_win:
-                    tex_click_pos=(event.pos[0]/tex_preview_sz, event.pos[1]/tex_preview_sz)
-                    print(f"Clic texture : pixel={event.pos}  uv=({tex_click_pos[0]:.3f}, {tex_click_pos[1]:.3f})")
+                    # Pixel dans l'atlas (la preview est étirée à tex_preview_sz×tex_preview_sz)
+                    px=int(event.pos[0]*atlas_w/tex_preview_sz)
+                    py=int(event.pos[1]*atlas_h/tex_preview_sz)
+                    entry=next((e for e in atlas_data["images"]
+                                if e["x"]<=px<e["x"]+e["width"]
+                                and e["y"]<=py<e["y"]+e["height"]), None)
+                    if entry and selected_quad_idx>=0:
+                        u0=entry["x"]/atlas_w;  u1=(entry["x"]+entry["width"])/atlas_w
+                        # V inversé : texture uploadée verticalement retournée
+                        v1=1.0-entry["y"]/atlas_h;  v0=1.0-(entry["y"]+entry["height"])/atlas_h
+                        quad_uvs[selected_quad_idx]=[(u0,v0),(u1,v0),(u1,v1),(u0,v1)]
                     close_tex_preview()
 
             if event.type==pygame.WINDOWCLOSE:
