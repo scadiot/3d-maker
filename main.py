@@ -1,11 +1,11 @@
 """
 Visionneuse 3D
-Navigation : ZQSD pour se déplacer, molette maintenue pour orienter, Échap pour quitter
+Navigation : ZQSD déplacer, molette orienter, Espace alterner translation/rotation, Échap quitter
 """
 
 import math
 import pygame
-from pygame.locals import DOUBLEBUF, OPENGL, QUIT, KEYDOWN, K_ESCAPE, K_z, K_q, K_s, K_d
+from pygame.locals import DOUBLEBUF, OPENGL, QUIT, KEYDOWN, K_ESCAPE, K_z, K_q, K_s, K_d, K_SPACE
 from OpenGL.GL import *
 from OpenGL.GLU import gluPerspective
 
@@ -25,13 +25,18 @@ MOVE_SPEED        = 8.0
 MOUSE_SENSITIVITY = 0.15
 
 # ── Monde ──────────────────────────────────────────────────────────────────────
-quads = []  # liste de quads : chaque élément = liste de 4 tuples (x,y,z)
+quads = []
 
 # ── Sélection / gizmo ──────────────────────────────────────────────────────────
-selected_quad_idx = -1
-dragging_axis     = None   # 'x', 'y', 'z' ou None
-drag_start_verts  = None
-drag_axis_t0      = 0.0
+selected_quad_idx  = -1
+gizmo_mode         = 'translate'   # 'translate' | 'rotate'
+dragging_axis      = None
+drag_start_verts   = None
+drag_axis_t0       = 0.0           # translation : paramètre axe au départ
+drag_angle0        = 0.0           # rotation : angle au départ
+drag_plane_u       = None          # rotation : base de plan
+drag_plane_v       = None
+drag_center        = None          # rotation : centre au départ
 
 # ── Vec3 ───────────────────────────────────────────────────────────────────────
 def vadd(a, b):   return (a[0]+b[0], a[1]+b[1], a[2]+b[2])
@@ -54,35 +59,25 @@ def right_xz(yaw):
     return (math.cos(r), 0.0, -math.sin(r))
 
 def world_to_screen(wx, wy, wz):
-    """Point monde → coordonnées écran (px,py) relatives au viewport 3D, ou None si derrière."""
     tx, ty, tz = wx-cam_pos[0], wy-cam_pos[1], wz-cam_pos[2]
-    yr = math.radians(cam_yaw)
-    cy, sy = math.cos(yr), math.sin(yr)
+    yr = math.radians(cam_yaw);  cy, sy = math.cos(yr), math.sin(yr)
     cx2 = tx*cy - tz*sy;  cy2 = ty;  cz2 = tx*sy + tz*cy
-    pr = math.radians(cam_pitch)
-    cp, sp = math.cos(pr), math.sin(pr)
+    pr = math.radians(cam_pitch);  cp, sp = math.cos(pr), math.sin(pr)
     cx3 = cx2;  cy3 = cy2*cp + cz2*sp;  cz3 = -cy2*sp + cz2*cp
-    if cz3 >= -1e-4:
-        return None
-    aspect = VIEW_WIDTH / HEIGHT
-    t = math.tan(math.radians(FOV / 2))
-    ndcx = cx3 / (-cz3 * aspect * t)
-    ndcy = cy3 / (-cz3 * t)
+    if cz3 >= -1e-4: return None
+    aspect = VIEW_WIDTH / HEIGHT;  t = math.tan(math.radians(FOV/2))
+    ndcx = cx3/(-cz3*aspect*t);  ndcy = cy3/(-cz3*t)
     return ((ndcx+1)/2*VIEW_WIDTH, (1-ndcy)/2*HEIGHT)
 
 def screen_ray(px, py):
-    """Pixel (relatif viewport 3D) → direction rayon monde."""
-    aspect = VIEW_WIDTH / HEIGHT
-    t = math.tan(math.radians(FOV / 2))
-    rcx = ((2*px/VIEW_WIDTH)-1) * aspect * t
-    rcy = (1-(2*py/HEIGHT)) * t
+    aspect = VIEW_WIDTH/HEIGHT;  t = math.tan(math.radians(FOV/2))
+    rcx = ((2*px/VIEW_WIDTH)-1)*aspect*t
+    rcy = (1-(2*py/HEIGHT))*t
     rcz = -1.0
     rcx, rcy, rcz = normalize((rcx, rcy, rcz))
-    pr = math.radians(cam_pitch)
-    cp, sp = math.cos(pr), math.sin(pr)
+    pr = math.radians(cam_pitch);  cp, sp = math.cos(pr), math.sin(pr)
     rx1 = rcx;  ry1 = rcy*cp - rcz*sp;  rz1 = rcy*sp + rcz*cp
-    yr = math.radians(cam_yaw)
-    cy, sy = math.cos(yr), math.sin(yr)
+    yr = math.radians(cam_yaw);  cy, sy = math.cos(yr), math.sin(yr)
     return normalize((rx1*cy+rz1*sy, ry1, -rx1*sy+rz1*cy))
 
 # ── Intersection ───────────────────────────────────────────────────────────────
@@ -91,7 +86,7 @@ def ray_triangle(orig, dir, v0, v1, v2):
     e1, e2 = vsub(v1,v0), vsub(v2,v0)
     h = cross(dir, e2);  a = dot(e1, h)
     if -EPS < a < EPS: return None
-    f = 1.0/a;  s = vsub(orig, v0);  u = f*dot(s, h)
+    f = 1/a;  s = vsub(orig, v0);  u = f*dot(s, h)
     if u < 0 or u > 1: return None
     q = cross(s, e1);  v = f*dot(dir, q)
     if v < 0 or u+v > 1: return None
@@ -104,8 +99,13 @@ def ray_quad_intersect(orig, dir, quad):
                         ray_triangle(orig,dir,v[0],v[2],v[3])) if t is not None]
     return min(hits) if hits else None
 
+def ray_plane_intersect(ray_o, ray_d, plane_pt, plane_n):
+    denom = dot(ray_d, plane_n)
+    if abs(denom) < 1e-10: return None
+    t = dot(vsub(plane_pt, ray_o), plane_n) / denom
+    return vadd(ray_o, vscale(ray_d, t)) if t > 0 else None
+
 def ray_line_closest_s(ray_o, ray_d, line_o, line_d):
-    """Retourne s : line_o + s*line_d est le point de la droite le plus proche du rayon."""
     w = vsub(ray_o, line_o)
     a, b, c = dot(ray_d,ray_d), dot(ray_d,line_d), dot(line_d,line_d)
     d, e = dot(ray_d,w), dot(line_d,w)
@@ -113,11 +113,22 @@ def ray_line_closest_s(ray_o, ray_d, line_o, line_d):
     return (a*e - b*d)/denom if abs(denom) > 1e-10 else 0.0
 
 def seg_dist_2d(px, py, ax, ay, bx, by):
-    dx, dy = bx-ax, by-ay
-    len2 = dx*dx+dy*dy
+    dx, dy = bx-ax, by-ay;  len2 = dx*dx+dy*dy
     if len2 < 1e-10: return math.hypot(px-ax, py-ay)
     t = max(0.0, min(1.0, ((px-ax)*dx+(py-ay)*dy)/len2))
     return math.hypot(px-(ax+t*dx), py-(ay+t*dy))
+
+# ── Géométrie rotation ─────────────────────────────────────────────────────────
+def angle_on_plane(point, center, u, v):
+    local = vsub(point, center)
+    return math.atan2(dot(local, v), dot(local, u))
+
+def rotate_point(point, center, axis, angle):
+    p  = vsub(point, center)
+    ca, sa = math.cos(angle), math.sin(angle)
+    return vadd(center, vadd(vadd(vscale(p, ca),
+                                  vscale(cross(axis, p), sa)),
+                             vscale(axis, dot(axis, p)*(1-ca))))
 
 # ── Gizmo ──────────────────────────────────────────────────────────────────────
 GIZMO_AXES = {
@@ -137,20 +148,17 @@ def perp_basis(axis):
     u = normalize(cross(axis, ref))
     return u, normalize(cross(axis, u))
 
+# -- Gizmo translation --
 def draw_arrow_3d(start, tip, color, selected=False):
     r, g, b = (1.0, 0.9, 0.1) if selected else color
     length = vlength(vsub(tip, start))
     if length < 1e-10: return
     axis = normalize(vsub(tip, start))
     cone_base = vadd(start, vscale(axis, length*0.78))
-    cone_r = length * 0.08
-    u, v = perp_basis(axis)
-    N = 10
+    cone_r = length*0.08;  u, v = perp_basis(axis);  N = 10
     glColor3f(r, g, b)
     glLineWidth(2.5 if selected else 2.0)
-    glBegin(GL_LINES)
-    glVertex3f(*start); glVertex3f(*cone_base)
-    glEnd()
+    glBegin(GL_LINES); glVertex3f(*start); glVertex3f(*cone_base); glEnd()
     glLineWidth(1.0)
     glBegin(GL_TRIANGLE_FAN)
     glVertex3f(*tip)
@@ -160,18 +168,17 @@ def draw_arrow_3d(start, tip, color, selected=False):
         glVertex3f(*p)
     glEnd()
 
-def draw_gizmo(center, active_axis=None):
+def draw_translate_gizmo(center, active_axis=None):
     scale = gizmo_scale(center)
     glDisable(GL_DEPTH_TEST)
     for name, (axis_dir, color) in GIZMO_AXES.items():
         draw_arrow_3d(center, vadd(center, vscale(axis_dir, scale)), color, name==active_axis)
     glEnable(GL_DEPTH_TEST)
 
-def pick_gizmo_axis(mx, my):
+def pick_translate_axis(mx, my):
     if selected_quad_idx < 0: return None
     center = quad_center(quads[selected_quad_idx])
-    scale  = gizmo_scale(center)
-    vx, vy = mx - PANEL_WIDTH, my
+    scale  = gizmo_scale(center);  vx, vy = mx-PANEL_WIDTH, my
     best, best_d = None, 10.0
     for name, (axis_dir, _) in GIZMO_AXES.items():
         p0 = world_to_screen(*center)
@@ -181,15 +188,52 @@ def pick_gizmo_axis(mx, my):
             if d < best_d: best_d, best = d, name
     return best
 
+# -- Gizmo rotation --
+RING_SEGMENTS = 48
+
+def draw_rotate_gizmo(center, active_axis=None):
+    scale = gizmo_scale(center)
+    glDisable(GL_DEPTH_TEST)
+    for name, (axis_dir, color) in GIZMO_AXES.items():
+        r, g, b = (1.0, 0.9, 0.1) if name == active_axis else color
+        glColor3f(r, g, b)
+        glLineWidth(2.5 if name == active_axis else 2.0)
+        u, v = perp_basis(axis_dir)
+        glBegin(GL_LINE_LOOP)
+        for i in range(RING_SEGMENTS):
+            a = 2*math.pi*i/RING_SEGMENTS
+            p = vadd(center, vadd(vscale(u, scale*math.cos(a)), vscale(v, scale*math.sin(a))))
+            glVertex3f(*p)
+        glEnd()
+    glLineWidth(1.0)
+    glEnable(GL_DEPTH_TEST)
+
+def pick_rotate_axis(mx, my):
+    if selected_quad_idx < 0: return None
+    center = quad_center(quads[selected_quad_idx])
+    scale  = gizmo_scale(center);  vx, vy = mx-PANEL_WIDTH, my
+    best, best_d = None, 10.0
+    for name, (axis_dir, _) in GIZMO_AXES.items():
+        u, v = perp_basis(axis_dir)
+        prev = None
+        for i in range(RING_SEGMENTS+1):
+            a = 2*math.pi*i/RING_SEGMENTS
+            p = vadd(center, vadd(vscale(u, scale*math.cos(a)), vscale(v, scale*math.sin(a))))
+            sp = world_to_screen(*p)
+            if sp and prev:
+                d = seg_dist_2d(vx, vy, prev[0], prev[1], sp[0], sp[1])
+                if d < best_d: best_d, best = d, name
+            prev = sp if sp else None
+    return best
+
 # ── Quads ──────────────────────────────────────────────────────────────────────
 def add_vertical_quad():
     yr = math.radians(cam_yaw)
-    fx, fz =  math.sin(yr),  math.cos(yr)
-    rx, rz =  math.cos(yr), -math.sin(yr)
-    cx, cz = cam_pos[0]+fx*5, cam_pos[2]+fz*5
+    cx = round(cam_pos[0] - math.sin(yr) * 5)
+    cz = round(cam_pos[2] - math.cos(yr) * 5)
     quads.append([
-        (cx-rx, 0.0, cz-rz), (cx+rx, 0.0, cz+rz),
-        (cx+rx, 2.0, cz+rz), (cx-rx, 2.0, cz-rz),
+        (cx-1, 0.0, cz-1), (cx+1, 0.0, cz-1),
+        (cx+1, 0.0, cz+1), (cx-1, 0.0, cz+1),
     ])
 
 def draw_quads():
@@ -200,31 +244,52 @@ def draw_quads():
         for vx, vy, vz in quad: glVertex3f(vx, vy, vz)
         glEnd()
         glLineWidth(2.5 if sel else 1.5)
-        if sel:
-            glColor3f(1.0, 0.15, 0.15)
-        else:
-            glColor3f(1.0, 0.75, 0.35)
+        glColor3f(1.0, 0.15, 0.15) if sel else glColor3f(1.0, 0.75, 0.35)
         glBegin(GL_LINE_LOOP)
         for vx, vy, vz in quad: glVertex3f(vx, vy, vz)
         glEnd()
     glLineWidth(1.0)
 
-# ── Drag ───────────────────────────────────────────────────────────────────────
-def start_drag(axis, mx, my):
+# ── Drag translation ───────────────────────────────────────────────────────────
+def start_translate_drag(axis, mx, my):
     global dragging_axis, drag_start_verts, drag_axis_t0
     dragging_axis    = axis
     drag_start_verts = list(quads[selected_quad_idx])
     center   = quad_center(drag_start_verts)
-    axis_dir = GIZMO_AXES[axis][0]
-    drag_axis_t0 = ray_line_closest_s(tuple(cam_pos), screen_ray(mx-PANEL_WIDTH, my), center, axis_dir)
+    drag_axis_t0 = ray_line_closest_s(tuple(cam_pos), screen_ray(mx-PANEL_WIDTH, my),
+                                      center, GIZMO_AXES[axis][0])
 
-def update_drag(mx, my):
+def update_translate_drag(mx, my):
     if dragging_axis is None or drag_start_verts is None: return
     center   = quad_center(drag_start_verts)
     axis_dir = GIZMO_AXES[dragging_axis][0]
     t = ray_line_closest_s(tuple(cam_pos), screen_ray(mx-PANEL_WIDTH, my), center, axis_dir)
-    move = vscale(axis_dir, t - drag_axis_t0)
+    move = vscale(axis_dir, round(t - drag_axis_t0))
     quads[selected_quad_idx] = [vadd(v, move) for v in drag_start_verts]
+
+# ── Drag rotation ──────────────────────────────────────────────────────────────
+def start_rotate_drag(axis, mx, my):
+    global dragging_axis, drag_start_verts, drag_angle0, drag_plane_u, drag_plane_v, drag_center
+    dragging_axis    = axis
+    drag_start_verts = list(quads[selected_quad_idx])
+    drag_center      = quad_center(drag_start_verts)
+    axis_dir         = GIZMO_AXES[axis][0]
+    drag_plane_u, drag_plane_v = perp_basis(axis_dir)
+    hit = ray_plane_intersect(tuple(cam_pos), screen_ray(mx-PANEL_WIDTH, my),
+                              drag_center, axis_dir)
+    drag_angle0 = angle_on_plane(hit, drag_center, drag_plane_u, drag_plane_v) if hit else 0.0
+
+def update_rotate_drag(mx, my):
+    if dragging_axis is None or drag_start_verts is None: return
+    axis_dir = GIZMO_AXES[dragging_axis][0]
+    hit = ray_plane_intersect(tuple(cam_pos), screen_ray(mx-PANEL_WIDTH, my),
+                              drag_center, axis_dir)
+    if hit is None: return
+    angle = angle_on_plane(hit, drag_center, drag_plane_u, drag_plane_v)
+    step  = math.radians(45)
+    delta = round((angle - drag_angle0) / step) * step
+    quads[selected_quad_idx] = [rotate_point(v, drag_center, axis_dir, delta)
+                                 for v in drag_start_verts]
 
 # ── Grille ─────────────────────────────────────────────────────────────────────
 def draw_grid(half_size=30, step=1):
@@ -288,7 +353,7 @@ def draw_texture(tex_id, x, y, w, h):
 
 BTN = {"x": 15, "y": 15, "w": 220, "h": 36}
 
-def draw_panel(btn_hovered, btn_tex, btn_tex_w, btn_tex_h):
+def draw_panel(btn_hovered, btn_tex, btn_tex_w, btn_tex_h, mode_tex, mode_tex_w, mode_tex_h):
     draw_rect(0, 0, PANEL_WIDTH, HEIGHT, 0.10, 0.10, 0.13)
     draw_rect(PANEL_WIDTH-1, 0, 1, HEIGHT, 0.22, 0.22, 0.28)
     b = BTN
@@ -296,12 +361,18 @@ def draw_panel(btn_hovered, btn_tex, btn_tex_w, btn_tex_h):
         draw_rect(b["x"], b["y"], b["w"], b["h"], 0.35, 0.55, 0.85)
     else:
         draw_rect(b["x"], b["y"], b["w"], b["h"], 0.22, 0.40, 0.70)
-    draw_texture(btn_tex, b["x"]+(b["w"]-btn_tex_w)//2, b["y"]+(b["h"]-btn_tex_h)//2, btn_tex_w, btn_tex_h)
+    draw_texture(btn_tex, b["x"]+(b["w"]-btn_tex_w)//2, b["y"]+(b["h"]-btn_tex_h)//2,
+                 btn_tex_w, btn_tex_h)
+    # Indicateur de mode gizmo (affiché si un objet est sélectionné)
+    if selected_quad_idx >= 0:
+        draw_texture(mode_tex, b["x"], b["y"]+b["h"]+10, mode_tex_w, mode_tex_h)
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
     global cam_pos, cam_yaw, cam_pitch
-    global selected_quad_idx, dragging_axis, drag_start_verts, drag_axis_t0
+    global selected_quad_idx, gizmo_mode
+    global dragging_axis, drag_start_verts, drag_axis_t0
+    global drag_angle0, drag_plane_u, drag_plane_v, drag_center
 
     pygame.init()
     pygame.display.set_mode((TOTAL_WIDTH, HEIGHT), DOUBLEBUF | OPENGL)
@@ -309,8 +380,16 @@ def main():
     glEnable(GL_DEPTH_TEST)
     glClearColor(0.08, 0.08, 0.12, 1.0)
 
-    font = pygame.font.SysFont("segoeui", 15)
-    btn_tex, btn_tex_w, btn_tex_h = make_text_texture(font, "add vertical quad")
+    font     = pygame.font.SysFont("segoeui", 15)
+    font_sm  = pygame.font.SysFont("segoeui", 13)
+    btn_tex, btn_tex_w, btn_tex_h = make_text_texture(font, "add quad")
+
+    def make_mode_tex():
+        label = "[ Espace ] Gizmo : Translation" if gizmo_mode == 'translate' else "[ Espace ] Gizmo : Rotation"
+        col   = (120, 200, 120) if gizmo_mode == 'translate' else (200, 140, 80)
+        return make_text_texture(font_sm, label, col)
+
+    mode_tex, mode_tex_w, mode_tex_h = make_mode_tex()
 
     clock   = pygame.time.Clock()
     running = True
@@ -323,39 +402,47 @@ def main():
 
         for event in pygame.event.get():
             if event.type == QUIT: running = False
-            if event.type == KEYDOWN and event.key == K_ESCAPE: running = False
+            if event.type == KEYDOWN:
+                if event.key == K_ESCAPE: running = False
+                if event.key == K_SPACE and selected_quad_idx >= 0:
+                    gizmo_mode = 'rotate' if gizmo_mode == 'translate' else 'translate'
+                    mode_tex, mode_tex_w, mode_tex_h = make_mode_tex()
+                    dragging_axis = None
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if btn_hovered:
                     add_vertical_quad()
                 elif in_3d:
-                    axis = pick_gizmo_axis(mx, my)
-                    if axis:
-                        start_drag(axis, mx, my)
+                    if gizmo_mode == 'translate':
+                        axis = pick_translate_axis(mx, my)
+                        if axis:
+                            start_translate_drag(axis, mx, my)
+                        else:
+                            selected_quad_idx = _pick_quad(mx, my)
                     else:
-                        ray_o = tuple(cam_pos)
-                        ray_d = screen_ray(mx-PANEL_WIDTH, my)
-                        best_t, best_i = float('inf'), -1
-                        for i, q in enumerate(quads):
-                            t = ray_quad_intersect(ray_o, ray_d, q)
-                            if t is not None and t < best_t:
-                                best_t, best_i = t, i
-                        selected_quad_idx = best_i
+                        axis = pick_rotate_axis(mx, my)
+                        if axis:
+                            start_rotate_drag(axis, mx, my)
+                        else:
+                            selected_quad_idx = _pick_quad(mx, my)
+                            gizmo_mode = 'translate'
+                            mode_tex, mode_tex_w, mode_tex_h = make_mode_tex()
 
             if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                dragging_axis = None
-                drag_start_verts = None
+                dragging_axis = None;  drag_start_verts = None
 
         if dragging_axis and pygame.mouse.get_pressed()[0]:
-            update_drag(mx, my)
+            if gizmo_mode == 'translate':
+                update_translate_drag(mx, my)
+            else:
+                update_rotate_drag(mx, my)
 
         dx, dy = pygame.mouse.get_rel()
         if pygame.mouse.get_pressed()[1] and in_3d:
             cam_yaw   = (cam_yaw   - dx * MOUSE_SENSITIVITY) % 360.0
             cam_pitch = max(-89.0, min(89.0, cam_pitch - dy * MOUSE_SENSITIVITY))
 
-        keys  = pygame.key.get_pressed()
-        speed = MOVE_SPEED * dt
+        keys  = pygame.key.get_pressed();  speed = MOVE_SPEED * dt
         fwd, rgt = forward_xz(cam_yaw, cam_pitch), right_xz(cam_yaw)
         if keys[K_z]: cam_pos[0]-=fwd[0]*speed; cam_pos[1]+=fwd[1]*speed; cam_pos[2]-=fwd[2]*speed
         if keys[K_s]: cam_pos[0]+=fwd[0]*speed; cam_pos[1]-=fwd[1]*speed; cam_pos[2]+=fwd[2]*speed
@@ -375,17 +462,31 @@ def main():
         draw_grid(30, 1)
         draw_quads()
         if selected_quad_idx >= 0:
-            draw_gizmo(quad_center(quads[selected_quad_idx]), dragging_axis)
+            center = quad_center(quads[selected_quad_idx])
+            if gizmo_mode == 'translate':
+                draw_translate_gizmo(center, dragging_axis)
+            else:
+                draw_rotate_gizmo(center, dragging_axis)
 
         # ── Rendu 2D ──────────────────────────────────────────────────────────
         begin_2d()
-        draw_panel(btn_hovered, btn_tex, btn_tex_w, btn_tex_h)
+        draw_panel(btn_hovered, btn_tex, btn_tex_w, btn_tex_h, mode_tex, mode_tex_w, mode_tex_h)
         end_2d()
 
         pygame.display.flip()
 
     glDeleteTextures(1, [btn_tex])
+    glDeleteTextures(1, [mode_tex])
     pygame.quit()
+
+
+def _pick_quad(mx, my):
+    ray_o = tuple(cam_pos);  ray_d = screen_ray(mx-PANEL_WIDTH, my)
+    best_t, best_i = float('inf'), -1
+    for i, q in enumerate(quads):
+        t = ray_quad_intersect(ray_o, ray_d, q)
+        if t is not None and t < best_t: best_t, best_i = t, i
+    return best_i
 
 
 if __name__ == "__main__":
