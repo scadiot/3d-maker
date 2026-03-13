@@ -119,6 +119,8 @@ def ray_triangle(orig, dir, v0, v1, v2):
 
 def ray_quad_intersect(orig, dir, quad):
     v=[tuple(x) for x in quad]
+    normal=cross(vsub(v[1],v[0]),vsub(v[2],v[0]))
+    if dot(dir,normal)<=0: return None   # face arrière ou perpendiculaire
     hits=[t for t in (ray_triangle(orig,dir,v[0],v[1],v[2]),
                       ray_triangle(orig,dir,v[0],v[2],v[3])) if t is not None]
     return min(hits) if hits else None
@@ -317,6 +319,7 @@ def add_quad():
     quad_uvs.append([(0.0,0.0),(1.0,0.0),(1.0,1.0),(0.0,1.0)])
 
 def draw_quads():
+    glEnable(GL_CULL_FACE);  glCullFace(GL_BACK);  glFrontFace(GL_CW)
     for i,quad in enumerate(quads):
         sel=(i==selected_quad_idx)
         uvs=quad_uvs[i] if i<len(quad_uvs) else [(0,0),(1,0),(1,1),(0,1)]
@@ -333,6 +336,7 @@ def draw_quads():
         for vx,vy,vz in quad: glVertex3f(vx,vy,vz)
         glEnd()
     glLineWidth(1.0)
+    glDisable(GL_CULL_FACE)
 
 # ── Drag translation ───────────────────────────────────────────────────────────
 def start_translate_drag(axis, mx, my):
