@@ -3,9 +3,10 @@ Visionneuse 3D
 Navigation : ZQSD déplacer, molette orienter, Espace alterner gizmos, Échap quitter
 """
 
+import copy
 import math
 import pygame
-from pygame.locals import DOUBLEBUF, OPENGL, QUIT, KEYDOWN, K_ESCAPE, K_z, K_q, K_s, K_d, K_SPACE
+from pygame.locals import DOUBLEBUF, OPENGL, QUIT, KEYDOWN, K_ESCAPE, K_z, K_q, K_s, K_d, K_SPACE, K_c
 from OpenGL.GL import *
 from OpenGL.GLU import gluPerspective
 
@@ -488,6 +489,9 @@ def main():
             if event.type==QUIT: running=False
             if event.type==KEYDOWN:
                 if event.key==K_ESCAPE: running=False
+                if event.key==K_c and selected_quad_idx>=0:
+                    quads.append(copy.deepcopy(quads[selected_quad_idx]))
+                    selected_quad_idx=len(quads)-1
                 if event.key==K_SPACE and selected_quad_idx>=0:
                     gizmo_mode=GIZMO_MODES[(GIZMO_MODES.index(gizmo_mode)+1)%3]
                     mode_tex,mode_tex_w,mode_tex_h=make_mode_tex()
