@@ -28,9 +28,11 @@ MOVE_SPEED        = 8.0
 MOUSE_SENSITIVITY = 0.15
 
 # ── Monde ──────────────────────────────────────────────────────────────────────
-quads        = []
-quad_texture = 0
+quads           = []
+quad_texture    = 0
 tex_preview_win = None
+tex_preview_sz  = 0
+tex_click_pos   = None   # (u, v) normalisé 0-1 du dernier clic dans l'aperçu
 
 # ── Sélection / gizmo ──────────────────────────────────────────────────────────
 selected_quad_idx = -1
@@ -466,14 +468,14 @@ def draw_panel(btn_hovered,btn_tex,btn_tex_w,btn_tex_h,mode_tex,mode_tex_w,mode_
 
 # ── Fenêtre aperçu texture ─────────────────────────────────────────────────────
 def open_tex_preview():
-    global tex_preview_win
+    global tex_preview_win, tex_preview_sz
     if tex_preview_win:
         return
     img = pygame.image.load(TEXTURE_PATH)
-    sz  = min(img.get_width(), PREVIEW_MAX_SZ)
-    if img.get_width() != sz:
-        img = pygame.transform.smoothscale(img, (sz, sz))
-    tex_preview_win = pygame.Window("Aperçu texture", size=(sz, sz))
+    tex_preview_sz = min(img.get_width(), PREVIEW_MAX_SZ)
+    if img.get_width() != tex_preview_sz:
+        img = pygame.transform.smoothscale(img, (tex_preview_sz, tex_preview_sz))
+    tex_preview_win = pygame.Window("Aperçu texture", size=(tex_preview_sz, tex_preview_sz))
     tex_preview_win.get_surface().blit(img, (0, 0))
     tex_preview_win.flip()
 
@@ -495,7 +497,7 @@ def _pick_quad(mx,my):
 def main():
     global cam_pos,cam_yaw,cam_pitch
     global selected_quad_idx,gizmo_mode
-    global quad_texture,tex_preview_win
+    global quad_texture,tex_preview_win,tex_preview_sz,tex_click_pos
     global dragging_axis,drag_start_verts,drag_axis_t0
     global drag_angle0,drag_plane_u,drag_plane_v,drag_center
     global drag_hw0,drag_hh0,drag_wa,drag_ha
@@ -565,6 +567,12 @@ def main():
 
             if event.type==pygame.MOUSEBUTTONUP and event.button==1:
                 dragging_axis=None;  drag_start_verts=None
+
+            if event.type==pygame.MOUSEBUTTONDOWN and event.button==1:
+                if tex_preview_win and getattr(event,'window',None)==tex_preview_win:
+                    tex_click_pos=(event.pos[0]/tex_preview_sz, event.pos[1]/tex_preview_sz)
+                    print(f"Clic texture : pixel={event.pos}  uv=({tex_click_pos[0]:.3f}, {tex_click_pos[1]:.3f})")
+                    close_tex_preview()
 
             if event.type==pygame.WINDOWCLOSE:
                 if tex_preview_win and event.window==tex_preview_win:
