@@ -555,7 +555,8 @@ def main():
                     mode_tex,mode_tex_w,mode_tex_h=make_mode_tex()
                     dragging_axis=None
 
-            if event.type==pygame.MOUSEBUTTONDOWN and event.button==1:
+            if (event.type==pygame.MOUSEBUTTONDOWN and event.button==1
+                    and not (tex_preview_win and getattr(event,'window',None) is tex_preview_win)):
                 if btn_hovered:
                     add_quad()
                 elif in_3d:
