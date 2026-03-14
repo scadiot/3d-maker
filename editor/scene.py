@@ -114,13 +114,10 @@ class Scene:
             json.dump({"quads": quads_data}, f, indent=2, ensure_ascii=False)
 
     def load_json(self, path):
-        """Importe une scène depuis un fichier JSON (remplace la scène courante)."""
+        """Importe une scène depuis un fichier JSON (ajoute aux quads existants)."""
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        self.quads = []
-        self.quad_uvs = []
-        self.selected_idx = -1
-        self.selected_indices = set()
+        first_new = len(self.quads)
         for q in data.get("quads", []):
             center = tuple(q["position"])
             hw = q["size"][0] / 2
@@ -132,6 +129,10 @@ class Scene:
                 wa, ha = math3d.perp_basis(tuple(q["orientation"]))
             self.quads.append(math3d.quad_compose(center, wa, ha, hw, hh))
             self.quad_uvs.append([tuple(uv) for uv in q["uvs"]])
+        new_indices = set(range(first_new, len(self.quads)))
+        if new_indices:
+            self.selected_indices = new_indices
+            self.selected_idx = max(new_indices)
 
     # ── Aperçu texture ────────────────────────────────────────────────────────
     def open_tex_preview(self):
