@@ -23,6 +23,7 @@ class Scene:
         self.quad_uvs         = []
         self.selected_idx     = -1
         self.selected_indices = set()
+        self.groups           = []   # liste de sets d'indices formant des groupes
 
         self.quad_texture  = 0
         self.atlas_w       = 1
@@ -63,9 +64,11 @@ class Scene:
         self.quad_uvs.append([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
 
     def delete_selected(self):
-        for i in sorted(self.selected_indices, reverse=True):
+        deleted = set(self.selected_indices)
+        for i in sorted(deleted, reverse=True):
             self.quads.pop(i)
             self.quad_uvs.pop(i)
+        self._reindex_after_delete(deleted)
         self.selected_idx     = -1
         self.selected_indices = set()
 
@@ -96,6 +99,44 @@ class Scene:
             if t is not None and t < best_t:
                 best_t, best_i = t, i
         return best_i
+
+    # ── Groupes ───────────────────────────────────────────────────────────────
+    def get_group_for_quad(self, idx):
+        """Retourne le set du groupe contenant ce quad, ou None."""
+        for group in self.groups:
+            if idx in group:
+                return group
+        return None
+
+    def group_selected(self):
+        """Groupe les quads sélectionnés (minimum 2)."""
+        if len(self.selected_indices) < 2:
+            return
+        # Retirer les quads sélectionnés de leurs groupes existants
+        for group in self.groups:
+            group -= self.selected_indices
+        self.groups = [g for g in self.groups if len(g) >= 2]
+        self.groups.append(set(self.selected_indices))
+
+    def ungroup_selected(self):
+        """Dissocie les groupes contenant des quads sélectionnés."""
+        self.groups = [g for g in self.groups
+                       if not g.intersection(self.selected_indices)]
+
+    def _reindex_after_delete(self, deleted_indices):
+        """Met à jour les groupes après suppression de quads."""
+        sorted_deleted = sorted(deleted_indices)
+        new_groups = []
+        for group in self.groups:
+            new_group = set()
+            for idx in group:
+                if idx in deleted_indices:
+                    continue
+                shift = sum(1 for d in sorted_deleted if d < idx)
+                new_group.add(idx - shift)
+            if len(new_group) >= 2:
+                new_groups.append(new_group)
+        self.groups = new_groups
 
     # ── Sauvegarde ────────────────────────────────────────────────────────────
     def save_json(self, path):
@@ -181,7 +222,12 @@ class Scene:
             glEnd()
             glDisable(GL_TEXTURE_2D)
             glLineWidth(2.5 if sel else 1.5)
-            glColor3f(1.0, 0.15, 0.15) if sel else glColor3f(1.0, 0.75, 0.35)
+            if sel:
+                glColor3f(1.0, 0.15, 0.15)
+            elif self.get_group_for_quad(i) is not None:
+                glColor3f(0.2, 0.7, 1.0)
+            else:
+                glColor3f(1.0, 0.75, 0.35)
             glBegin(GL_LINE_LOOP)
             for vx, vy, vz in quad: glVertex3f(vx, vy, vz)
             glEnd()

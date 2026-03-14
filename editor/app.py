@@ -6,7 +6,7 @@ from tkinter import filedialog
 import pygame
 import pygame_gui
 from pygame.locals import (DOUBLEBUF, OPENGL, QUIT, KEYDOWN,
-                           K_SPACE, K_c, K_DELETE, K_t)
+                           K_SPACE, K_c, K_DELETE, K_t, K_g, K_h)
 from OpenGL.GL import (
     glEnable, glClearColor, glClear, glViewport,
     glMatrixMode, glLoadIdentity, glRotatef, glTranslatef,
@@ -158,6 +158,12 @@ class App:
         if event.key == K_SPACE and self.scene.selected_indices:
             self.gizmo.cycle_mode(len(self.scene.selected_indices) > 1)
 
+        if event.key == K_g and len(self.scene.selected_indices) >= 2:
+            self.scene.group_selected()
+
+        if event.key == K_h and self.scene.selected_indices:
+            self.scene.ungroup_selected()
+
     def _handle_mouse_down_3d(self, mx, my):
         ctrl_held = bool(pygame.key.get_mods() & pygame.KMOD_CTRL)
         multi     = len(self.scene.selected_indices) > 1
@@ -217,19 +223,22 @@ class App:
         return self.scene.pick_quad(ray_o, ray_d)
 
     def _apply_selection(self, clicked_idx, ctrl_held):
-        """Applique la sélection selon Ctrl."""
+        """Applique la sélection selon Ctrl, en expandant aux groupes."""
+        group = self.scene.get_group_for_quad(clicked_idx) if clicked_idx >= 0 else None
+        to_select = group if group else ({clicked_idx} if clicked_idx >= 0 else set())
+
         if ctrl_held:
             if clicked_idx >= 0:
                 if clicked_idx in self.scene.selected_indices:
-                    self.scene.selected_indices.discard(clicked_idx)
+                    self.scene.selected_indices -= to_select
                     self.scene.selected_idx = next(iter(self.scene.selected_indices), -1)
                 else:
-                    self.scene.selected_indices.add(clicked_idx)
+                    self.scene.selected_indices |= to_select
                     self.scene.selected_idx = clicked_idx
             # Ctrl+clic dans le vide : on ne désélectionne pas
         else:
             self.scene.selected_idx     = clicked_idx
-            self.scene.selected_indices = {clicked_idx} if clicked_idx >= 0 else set()
+            self.scene.selected_indices = set(to_select) if clicked_idx >= 0 else set()
 
     # ── Mise à jour ───────────────────────────────────────────────────────────
     def _update(self, dt, mx, my, in_3d):
