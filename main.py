@@ -45,16 +45,18 @@ tex_preview_sz  = 0
 tex_click_pos   = None   # (u, v) normalisé 0-1 du dernier clic dans l'aperçu
 
 # ── Sélection / gizmo ──────────────────────────────────────────────────────────
-selected_quad_idx = -1
-gizmo_mode        = 'translate'   # 'translate' | 'rotate' | 'scale'
+selected_quad_idx     = -1
+selected_quad_indices = set()     # tous les indices sélectionnés (multi-sélection Ctrl)
+gizmo_mode            = 'translate'   # 'translate' | 'rotate' | 'scale'
 GIZMO_MODES       = ['translate', 'rotate', 'scale']
 translate_snap    = 0.5           # pas de la translation
 scale_snap        = 0.5           # pas du redimensionnement
 
 # État drag partagé
-dragging_axis    = None   # axe ('x','y','z') ou handle ('width','height','uniform')
-drag_start_verts = None
-drag_axis_t0     = 0.0
+dragging_axis       = None   # axe ('x','y','z') ou handle ('width','height','uniform')
+drag_start_verts    = None
+drag_start_verts_all = {}   # {idx: verts_copie} pour la translation multi-sélection
+drag_axis_t0        = 0.0
 
 # État drag rotation
 drag_angle0   = 0.0
@@ -157,6 +159,14 @@ def rotate_point(point, center, axis, angle):
 
 def quad_center(quad):
     return (sum(v[0] for v in quad)/4, sum(v[1] for v in quad)/4, sum(v[2] for v in quad)/4)
+
+def selection_center():
+    """Barycentre de tous les quads sélectionnés."""
+    indices = [i for i in selected_quad_indices if i < len(quads)]
+    if not indices:
+        return quad_center(quads[selected_quad_idx]) if selected_quad_idx >= 0 else (0.0, 0.0, 0.0)
+    cs = [quad_center(quads[i]) for i in indices]
+    return (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs), sum(c[2] for c in cs)/len(cs))
 
 def quad_decompose(quad):
     """Retourne (center, width_axis, height_axis, half_width, half_height)."""
@@ -273,8 +283,8 @@ def draw_scale_gizmo(quad, active=None):
 
 # ── Picking gizmos ─────────────────────────────────────────────────────────────
 def pick_translate_axis(mx, my):
-    if selected_quad_idx<0: return None
-    center=quad_center(quads[selected_quad_idx]);  scale=gizmo_scale(center)
+    if not selected_quad_indices: return None
+    center=selection_center();  scale=gizmo_scale(center)
     vx,vy=mx-PANEL_WIDTH,my;  best,best_d=None,10.0
     for name,(axis_dir,_) in GIZMO_AXES.items():
         p0=world_to_screen(*center);  p1=world_to_screen(*vadd(center,vscale(axis_dir,scale)))
@@ -324,7 +334,7 @@ def add_quad():
 def draw_quads():
     glEnable(GL_CULL_FACE);  glCullFace(GL_BACK);  glFrontFace(GL_CW)
     for i,quad in enumerate(quads):
-        sel=(i==selected_quad_idx)
+        sel=(i in selected_quad_indices)
         uvs=quad_uvs[i] if i<len(quad_uvs) else [(0,0),(1,0),(1,1),(0,1)]
         glEnable(GL_TEXTURE_2D);  glBindTexture(GL_TEXTURE_2D,quad_texture)
         glColor3f(1.0,1.0,1.0)
@@ -343,18 +353,29 @@ def draw_quads():
 
 # ── Drag translation ───────────────────────────────────────────────────────────
 def start_translate_drag(axis, mx, my):
-    global dragging_axis, drag_start_verts, drag_axis_t0
-    dragging_axis=axis;  drag_start_verts=list(quads[selected_quad_idx])
-    center=quad_center(drag_start_verts)
+    global dragging_axis, drag_start_verts, drag_start_verts_all, drag_axis_t0
+    dragging_axis = axis
+    drag_start_verts_all = {i: list(quads[i]) for i in selected_quad_indices if i < len(quads)}
+    if not drag_start_verts_all and selected_quad_idx >= 0:
+        drag_start_verts_all = {selected_quad_idx: list(quads[selected_quad_idx])}
+    drag_start_verts = drag_start_verts_all.get(selected_quad_idx)
+    cs = [quad_center(v) for v in drag_start_verts_all.values()]
+    center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
+              sum(c[2] for c in cs)/len(cs)) if cs else (0.0, 0.0, 0.0)
     drag_axis_t0=ray_line_closest_s(tuple(cam_pos),screen_ray(mx-PANEL_WIDTH,my),
                                     center,GIZMO_AXES[axis][0])
 
 def update_translate_drag(mx, my):
-    if dragging_axis is None or drag_start_verts is None: return
-    center=quad_center(drag_start_verts);  axis_dir=GIZMO_AXES[dragging_axis][0]
+    if dragging_axis is None or not drag_start_verts_all: return
+    cs = [quad_center(v) for v in drag_start_verts_all.values()]
+    center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
+              sum(c[2] for c in cs)/len(cs))
+    axis_dir=GIZMO_AXES[dragging_axis][0]
     t=ray_line_closest_s(tuple(cam_pos),screen_ray(mx-PANEL_WIDTH,my),center,axis_dir)
     move=vscale(axis_dir,round((t-drag_axis_t0)/translate_snap)*translate_snap)
-    quads[selected_quad_idx]=[vadd(v,move) for v in drag_start_verts]
+    for i, start_verts in drag_start_verts_all.items():
+        if i < len(quads):
+            quads[i]=[vadd(v,move) for v in start_verts]
 
 # ── Drag rotation ──────────────────────────────────────────────────────────────
 def start_rotate_drag(axis, mx, my):
@@ -490,9 +511,9 @@ def _pick_quad(mx,my):
 
 def main():
     global cam_pos,cam_yaw,cam_pitch
-    global selected_quad_idx,gizmo_mode,translate_snap,scale_snap
+    global selected_quad_idx,selected_quad_indices,gizmo_mode,translate_snap,scale_snap
     global quad_texture,atlas_w,atlas_h,tex_preview_win,tex_preview_sz,tex_click_pos
-    global dragging_axis,drag_start_verts,drag_axis_t0
+    global dragging_axis,drag_start_verts,drag_start_verts_all,drag_axis_t0
     global drag_angle0,drag_plane_u,drag_plane_v,drag_center
     global drag_hw0,drag_hh0,drag_wa,drag_ha
 
@@ -546,37 +567,60 @@ def main():
                 if event.key==K_t and selected_quad_idx>=0:
                     if tex_preview_win: close_tex_preview()
                     else:               open_tex_preview()
-                if event.key==K_DELETE and selected_quad_idx>=0:
-                    quads.pop(selected_quad_idx);  quad_uvs.pop(selected_quad_idx)
-                    selected_quad_idx=-1
+                if event.key==K_DELETE and selected_quad_indices:
+                    for i in sorted(selected_quad_indices, reverse=True):
+                        quads.pop(i);  quad_uvs.pop(i)
+                    selected_quad_idx=-1;  selected_quad_indices=set()
                     dragging_axis=None
-                if event.key==K_c and selected_quad_idx>=0:
+                if event.key==K_c and selected_quad_idx>=0 and len(selected_quad_indices)==1:
                     quads.append(copy.deepcopy(quads[selected_quad_idx]))
                     quad_uvs.append(list(quad_uvs[selected_quad_idx]))
                     selected_quad_idx=len(quads)-1
-                if event.key==K_SPACE and selected_quad_idx>=0:
+                    selected_quad_indices={selected_quad_idx}
+                if event.key==K_SPACE and selected_quad_idx>=0 and len(selected_quad_indices)<=1:
                     gizmo_mode=GIZMO_MODES[(GIZMO_MODES.index(gizmo_mode)+1)%3]
                     dragging_axis=None
 
             if (event.type==pygame.MOUSEBUTTONDOWN and event.button==1
                     and not (tex_preview_win and getattr(event,'window',None) is tex_preview_win)):
                 if in_3d:
-                    if gizmo_mode=='translate':
+                    ctrl_held = bool(pygame.key.get_mods() & pygame.KMOD_CTRL)
+                    multi = len(selected_quad_indices) > 1
+
+                    def _apply_selection(clicked_idx):
+                        """Applique la sélection selon Ctrl."""
+                        global selected_quad_idx, selected_quad_indices, gizmo_mode
+                        if ctrl_held:
+                            if clicked_idx >= 0:
+                                if clicked_idx in selected_quad_indices:
+                                    selected_quad_indices.discard(clicked_idx)
+                                    selected_quad_idx = next(iter(selected_quad_indices), -1)
+                                else:
+                                    selected_quad_indices.add(clicked_idx)
+                                    selected_quad_idx = clicked_idx
+                            # Ctrl+clic dans le vide : on ne désélectionne pas
+                        else:
+                            selected_quad_idx = clicked_idx
+                            selected_quad_indices = {clicked_idx} if clicked_idx >= 0 else set()
+
+                    if multi or gizmo_mode=='translate':
                         axis=pick_translate_axis(mx,my)
                         if axis: start_translate_drag(axis,mx,my)
-                        else:    selected_quad_idx=_pick_quad(mx,my)
+                        else:    _apply_selection(_pick_quad(mx,my))
                     elif gizmo_mode=='rotate':
                         axis=pick_rotate_axis(mx,my)
                         if axis: start_rotate_drag(axis,mx,my)
                         else:
-                            selected_quad_idx=_pick_quad(mx,my)
-                            gizmo_mode='translate'
+                            _apply_selection(_pick_quad(mx,my))
+                            if len(selected_quad_indices) <= 1:
+                                gizmo_mode='translate'
                     else:  # scale
                         handle=pick_scale_handle(mx,my)
                         if handle: start_scale_drag(handle,mx,my)
                         else:
-                            selected_quad_idx=_pick_quad(mx,my)
-                            gizmo_mode='translate'
+                            _apply_selection(_pick_quad(mx,my))
+                            if len(selected_quad_indices) <= 1:
+                                gizmo_mode='translate'
 
             if event.type==pygame.MOUSEBUTTONUP and event.button==1:
                 dragging_axis=None;  drag_start_verts=None
@@ -603,7 +647,9 @@ def main():
                     running=False
 
         if dragging_axis and pygame.mouse.get_pressed()[0]:
-            if   gizmo_mode=='translate': update_translate_drag(mx,my)
+            if len(selected_quad_indices) > 1:
+                update_translate_drag(mx,my)   # multi-sélection : translate uniquement
+            elif gizmo_mode=='translate': update_translate_drag(mx,my)
             elif gizmo_mode=='rotate':    update_rotate_drag(mx,my)
             else:                         update_scale_drag(mx,my)
 
@@ -629,11 +675,14 @@ def main():
         glTranslatef(-cam_pos[0],-cam_pos[1],-cam_pos[2])
 
         draw_grid(30,1);  draw_quads()
-        if selected_quad_idx>=0:
-            q=quads[selected_quad_idx];  c=quad_center(q)
-            if   gizmo_mode=='translate': draw_translate_gizmo(c,dragging_axis)
-            elif gizmo_mode=='rotate':    draw_rotate_gizmo(c,dragging_axis)
-            else:                         draw_scale_gizmo(q,dragging_axis)
+        if selected_quad_indices:
+            if len(selected_quad_indices) > 1:
+                draw_translate_gizmo(selection_center(), dragging_axis)
+            elif selected_quad_idx>=0:
+                q=quads[selected_quad_idx];  c=quad_center(q)
+                if   gizmo_mode=='translate': draw_translate_gizmo(c,dragging_axis)
+                elif gizmo_mode=='rotate':    draw_rotate_gizmo(c,dragging_axis)
+                else:                         draw_scale_gizmo(q,dragging_axis)
 
         # ── Rendu 2D ──────────────────────────────────────────────────────────
         ui_manager.update(dt)
