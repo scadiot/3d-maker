@@ -37,7 +37,6 @@ class App:
         self.btn_add         = None
         self.btn_save        = None
         self.btn_load        = None
-        self.dropdown_gizmo  = None
         self.dropdown_snap   = None
         self.dropdown_scale_snap = None
         self.ui_tex     = 0
@@ -73,26 +72,21 @@ class App:
         self.btn_add = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect(15, 15, 220, 36),
             text="Ajouter quad", manager=self.ui_manager)
-        self.dropdown_gizmo = pygame_gui.elements.UIDropDownMenu(
-            options_list=['translate', 'rotate', 'scale'],
-            starting_option=self.gizmo.mode,
+        self.dropdown_snap = pygame_gui.elements.UIDropDownMenu(
+            options_list=['1', '0.5', '0.25', '0.1', '0.05'],
+            starting_option=str(self.gizmo.translate_snap),
             relative_rect=pygame.Rect(15, 60, 220, 36),
             manager=self.ui_manager)
-        self.dropdown_snap = pygame_gui.elements.UIDropDownMenu(
-            options_list=['1', '0.5', '0.25', '0.1'],
-            starting_option=str(self.gizmo.translate_snap),
+        self.dropdown_scale_snap = pygame_gui.elements.UIDropDownMenu(
+            options_list=['1', '0.5', '0.25', '0.1', '0.05'],
+            starting_option=str(self.gizmo.scale_snap),
             relative_rect=pygame.Rect(15, 108, 220, 36),
             manager=self.ui_manager)
-        self.dropdown_scale_snap = pygame_gui.elements.UIDropDownMenu(
-            options_list=['1', '0.5', '0.25', '0.1'],
-            starting_option=str(self.gizmo.scale_snap),
-            relative_rect=pygame.Rect(15, 156, 220, 36),
-            manager=self.ui_manager)
         self.btn_save = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(15, 210, 220, 36),
+            relative_rect=pygame.Rect(15, 162, 220, 36),
             text="Enregistrer JSON", manager=self.ui_manager)
         self.btn_load = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(15, 258, 220, 36),
+            relative_rect=pygame.Rect(15, 210, 220, 36),
             text="Charger JSON", manager=self.ui_manager)
         self.ui_tex = glGenTextures(1)
 
@@ -140,10 +134,6 @@ class App:
             self._save_json_dialog()
         if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_load:
             self._load_json_dialog()
-        if (event.type == pygame_gui.UI_DROP_DOWN_MENU_CHANGED
-                and event.ui_element == self.dropdown_gizmo):
-            self.gizmo.mode = event.text
-            self.gizmo.stop_drag()
         if (event.type == pygame_gui.UI_DROP_DOWN_MENU_CHANGED
                 and event.ui_element == self.dropdown_snap):
             self.gizmo.translate_snap = float(event.text)
