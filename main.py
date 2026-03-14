@@ -294,8 +294,8 @@ def pick_translate_axis(mx, my):
     return best
 
 def pick_rotate_axis(mx, my):
-    if selected_quad_idx<0: return None
-    center=quad_center(quads[selected_quad_idx]);  scale=gizmo_scale(center)
+    if not selected_quad_indices: return None
+    center=selection_center();  scale=gizmo_scale(center)
     vx,vy=mx-PANEL_WIDTH,my;  N=48;  best,best_d=None,10.0
     for name,(axis_dir,_) in GIZMO_AXES.items():
         u,v=perp_basis(axis_dir);  prev=None
@@ -379,21 +379,25 @@ def update_translate_drag(mx, my):
 
 # ── Drag rotation ──────────────────────────────────────────────────────────────
 def start_rotate_drag(axis, mx, my):
-    global dragging_axis, drag_start_verts, drag_angle0, drag_plane_u, drag_plane_v, drag_center
-    dragging_axis=axis;  drag_start_verts=list(quads[selected_quad_idx])
-    drag_center=quad_center(drag_start_verts);  axis_dir=GIZMO_AXES[axis][0]
+    global dragging_axis, drag_start_verts, drag_start_verts_all, drag_angle0, drag_plane_u, drag_plane_v, drag_center
+    dragging_axis=axis
+    drag_start_verts_all = {i: list(quads[i]) for i in selected_quad_indices if i < len(quads)}
+    drag_start_verts = drag_start_verts_all.get(selected_quad_idx)
+    drag_center=selection_center();  axis_dir=GIZMO_AXES[axis][0]
     drag_plane_u,drag_plane_v=perp_basis(axis_dir)
     hit=ray_plane_intersect(tuple(cam_pos),screen_ray(mx-PANEL_WIDTH,my),drag_center,axis_dir)
     drag_angle0=angle_on_plane(hit,drag_center,drag_plane_u,drag_plane_v) if hit else 0.0
 
 def update_rotate_drag(mx, my):
-    if dragging_axis is None or drag_start_verts is None: return
+    if dragging_axis is None or not drag_start_verts_all: return
     axis_dir=GIZMO_AXES[dragging_axis][0]
     hit=ray_plane_intersect(tuple(cam_pos),screen_ray(mx-PANEL_WIDTH,my),drag_center,axis_dir)
     if hit is None: return
     angle=angle_on_plane(hit,drag_center,drag_plane_u,drag_plane_v)
     step=math.radians(45);  delta=round((angle-drag_angle0)/step)*step
-    quads[selected_quad_idx]=[rotate_point(v,drag_center,axis_dir,delta) for v in drag_start_verts]
+    for i, start_verts in drag_start_verts_all.items():
+        if i < len(quads):
+            quads[i]=[rotate_point(v,drag_center,axis_dir,delta) for v in start_verts]
 
 # ── Drag scale ─────────────────────────────────────────────────────────────────
 def start_scale_drag(handle, mx, my):
@@ -577,8 +581,11 @@ def main():
                     quad_uvs.append(list(quad_uvs[selected_quad_idx]))
                     selected_quad_idx=len(quads)-1
                     selected_quad_indices={selected_quad_idx}
-                if event.key==K_SPACE and selected_quad_idx>=0 and len(selected_quad_indices)<=1:
-                    gizmo_mode=GIZMO_MODES[(GIZMO_MODES.index(gizmo_mode)+1)%3]
+                if event.key==K_SPACE and selected_quad_indices:
+                    if len(selected_quad_indices) > 1:
+                        gizmo_mode='rotate' if gizmo_mode=='translate' else 'translate'
+                    else:
+                        gizmo_mode=GIZMO_MODES[(GIZMO_MODES.index(gizmo_mode)+1)%3]
                     dragging_axis=None
 
             if (event.type==pygame.MOUSEBUTTONDOWN and event.button==1
@@ -603,7 +610,7 @@ def main():
                             selected_quad_idx = clicked_idx
                             selected_quad_indices = {clicked_idx} if clicked_idx >= 0 else set()
 
-                    if multi or gizmo_mode=='translate':
+                    if gizmo_mode=='translate' or (multi and gizmo_mode=='scale'):
                         axis=pick_translate_axis(mx,my)
                         if axis: start_translate_drag(axis,mx,my)
                         else:    _apply_selection(_pick_quad(mx,my))
@@ -647,9 +654,7 @@ def main():
                     running=False
 
         if dragging_axis and pygame.mouse.get_pressed()[0]:
-            if len(selected_quad_indices) > 1:
-                update_translate_drag(mx,my)   # multi-sélection : translate uniquement
-            elif gizmo_mode=='translate': update_translate_drag(mx,my)
+            if   gizmo_mode=='translate': update_translate_drag(mx,my)
             elif gizmo_mode=='rotate':    update_rotate_drag(mx,my)
             else:                         update_scale_drag(mx,my)
 
@@ -677,7 +682,9 @@ def main():
         draw_grid(30,1);  draw_quads()
         if selected_quad_indices:
             if len(selected_quad_indices) > 1:
-                draw_translate_gizmo(selection_center(), dragging_axis)
+                center=selection_center()
+                if gizmo_mode=='rotate': draw_rotate_gizmo(center, dragging_axis)
+                else:                    draw_translate_gizmo(center, dragging_axis)
             elif selected_quad_idx>=0:
                 q=quads[selected_quad_idx];  c=quad_center(q)
                 if   gizmo_mode=='translate': draw_translate_gizmo(c,dragging_axis)
