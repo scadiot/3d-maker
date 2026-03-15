@@ -46,6 +46,7 @@ class App:
         self.dropdown_scale_snap = None
         self.ui_tex     = 0
         self.ui_surface = None
+        self.panning    = False
 
     # ── Cycle de vie ──────────────────────────────────────────────────────────
     def run(self):
@@ -141,6 +142,19 @@ class App:
 
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 self.gizmo.stop_drag()
+
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
+                self.panning = True
+                pygame.mouse.set_visible(False)
+                pygame.event.set_grab(True)
+                cx, cy = TOTAL_WIDTH // 2, HEIGHT // 2
+                pygame.mouse.set_pos(cx, cy)
+                pygame.mouse.get_rel()  # réinitialise le delta accumulé
+
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 2:
+                self.panning = False
+                pygame.mouse.set_visible(True)
+                pygame.event.set_grab(False)
 
             elif event.type == pygame.WINDOWCLOSE:
                 if self.scene.tex_preview_win and event.window == self.scene.tex_preview_win:
@@ -364,8 +378,11 @@ class App:
             self.gizmo.update_drag(mx, my, self.scene, self.camera)
 
         dx, dy = pygame.mouse.get_rel()
-        if pygame.mouse.get_pressed()[1] and in_3d:
-            self.camera.apply_mouse_look(dx, dy)
+        if self.panning:
+            cx, cy = TOTAL_WIDTH // 2, HEIGHT // 2
+            pygame.mouse.set_pos(cx, cy)
+            if in_3d:
+                self.camera.apply_mouse_look(dx, dy)
 
         keys = pygame.key.get_pressed()
         self.camera.apply_movement(keys, dt)

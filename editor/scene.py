@@ -7,10 +7,12 @@ import pygame
 from OpenGL.GL import (
     glGenTextures, glBindTexture, glTexImage2D, glTexParameteri,
     glEnable, glDisable, glCullFace, glFrontFace, glBegin, glEnd,
-    glColor3f, glTexCoord2f, glVertex3f, glLineWidth, glPointSize,
+    glColor3f, glColor4f, glTexCoord2f, glVertex3f, glLineWidth, glPointSize,
+    glBlendFunc,
     GL_TEXTURE_2D, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR,
     GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
     GL_CULL_FACE, GL_BACK, GL_CW, GL_TRIANGLE_FAN, GL_LINE_LOOP, GL_LINES, GL_POINTS,
+    GL_BLEND, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
 )
 
 from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
@@ -370,14 +372,18 @@ class Scene:
             glDisable(GL_TEXTURE_2D)
             glLineWidth(2.5 if sel else 1.5)
             if sel:
-                glColor3f(1.0, 0.15, 0.15)
+                glColor4f(1.0, 0.15, 0.15, 1.0)
             elif self.get_group_for_polygon(i) is not None:
-                glColor3f(0.2, 0.7, 1.0)
+                glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+                glColor4f(0.2, 0.7, 1.0, 0.5)
             else:
-                glColor3f(1.0, 0.75, 0.35)
+                glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+                glColor4f(1.0, 0.75, 0.35, 0.5)
             glBegin(GL_LINE_LOOP)
             for vx, vy, vz in poly: glVertex3f(vx, vy, vz)
             glEnd()
+            if not sel:
+                glDisable(GL_BLEND)
         glLineWidth(1.0)
         glDisable(GL_CULL_FACE)
         if self.selected_edges:

@@ -1,7 +1,7 @@
 # ── Dimensions ──────────────────────────────────────────────────────────────────
 PANEL_WIDTH    = 250
-VIEW_WIDTH     = 1280
-HEIGHT         = 720
+VIEW_WIDTH     = 1670
+HEIGHT         = 1080
 TOTAL_WIDTH    = PANEL_WIDTH + VIEW_WIDTH
 FOV            = 60.0
 NEAR, FAR      = 0.05, 2000.0
