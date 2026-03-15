@@ -197,6 +197,15 @@ class App:
         ctrl_held = bool(pygame.key.get_mods() & pygame.KMOD_CTRL)
         multi     = len(self.scene.selected_indices) > 1
 
+        # Arêtes sélectionnées : gizmo translate uniquement, sinon sélection d'arête
+        if self.border_selection_mode and self.scene.selected_edges:
+            axis = self.gizmo.pick_translate_axis(mx, my, self.scene, self.camera)
+            if axis:
+                self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
+            else:
+                self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
+            return
+
         if self.gizmo.mode == 'translate' or (multi and self.gizmo.mode == 'scale'):
             axis = self.gizmo.pick_translate_axis(mx, my, self.scene, self.camera)
             if axis:

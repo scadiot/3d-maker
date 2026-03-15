@@ -77,6 +77,9 @@ class Gizmo:
         self.drag_wa  = None
         self.drag_ha  = None
 
+        # État drag arêtes : {(qi, vi): sommet_départ}
+        self.drag_start_edge_verts = {}
+
     # ── Mode ──────────────────────────────────────────────────────────────────
     def cycle_mode(self, multi_selected):
         if multi_selected:
@@ -86,11 +89,15 @@ class Gizmo:
         self.dragging_axis = None
 
     def stop_drag(self):
-        self.dragging_axis    = None
-        self.drag_start_verts = None
+        self.dragging_axis         = None
+        self.drag_start_verts      = None
+        self.drag_start_edge_verts = {}
 
     # ── Dessin ────────────────────────────────────────────────────────────────
     def draw(self, scene, camera):
+        if scene.selected_edges:
+            self._draw_translate(self._edge_center(scene), camera, self.dragging_axis)
+            return
         if not scene.selected_indices:
             return
         if len(scene.selected_indices) > 1:
@@ -147,8 +154,12 @@ class Gizmo:
 
     # ── Picking ───────────────────────────────────────────────────────────────
     def pick_translate_axis(self, mx, my, scene, camera):
-        if not scene.selected_indices: return None
-        center = scene.selection_center()
+        if scene.selected_edges:
+            center = self._edge_center(scene)
+        elif scene.selected_indices:
+            center = scene.selection_center()
+        else:
+            return None
         scale  = self._gizmo_scale(center, camera)
         vx, vy = mx - PANEL_WIDTH, my;  best, best_d = None, 10.0
         for name, (axis_dir, _) in GIZMO_AXES.items():
@@ -207,32 +218,64 @@ class Gizmo:
 
     # ── Drag translation ──────────────────────────────────────────────────────
     def _start_translate_drag(self, axis, mx, my, scene, camera):
-        self.dragging_axis        = axis
-        self.drag_start_verts_all = {i: list(scene.quads[i])
-                                     for i in scene.selected_indices if i < len(scene.quads)}
-        if not self.drag_start_verts_all and scene.selected_idx >= 0:
-            self.drag_start_verts_all = {scene.selected_idx: list(scene.quads[scene.selected_idx])}
-        self.drag_start_verts = self.drag_start_verts_all.get(scene.selected_idx)
-        cs = [math3d.quad_center(v) for v in self.drag_start_verts_all.values()]
-        center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
-                  sum(c[2] for c in cs)/len(cs)) if cs else (0.0, 0.0, 0.0)
+        self.dragging_axis = axis
+        if scene.selected_edges:
+            self.drag_start_edge_verts = {}
+            for qi, ei in scene.selected_edges:
+                if qi < len(scene.quads):
+                    q = scene.quads[qi]
+                    self.drag_start_edge_verts[(qi, ei)]          = tuple(q[ei])
+                    self.drag_start_edge_verts[(qi, (ei+1) % 4)] = tuple(q[(ei+1) % 4])
+            self.drag_start_verts_all = {}
+            center = self._edge_center(scene)
+        else:
+            self.drag_start_edge_verts = {}
+            self.drag_start_verts_all  = {i: list(scene.quads[i])
+                                          for i in scene.selected_indices if i < len(scene.quads)}
+            if not self.drag_start_verts_all and scene.selected_idx >= 0:
+                self.drag_start_verts_all = {scene.selected_idx: list(scene.quads[scene.selected_idx])}
+            self.drag_start_verts = self.drag_start_verts_all.get(scene.selected_idx)
+            cs = [math3d.quad_center(v) for v in self.drag_start_verts_all.values()]
+            center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
+                      sum(c[2] for c in cs)/len(cs)) if cs else (0.0, 0.0, 0.0)
         self.drag_axis_t0 = math3d.ray_line_closest_s(
             tuple(camera.pos), camera.screen_ray(mx - PANEL_WIDTH, my),
             center, GIZMO_AXES[axis][0])
 
     def _update_translate_drag(self, mx, my, scene, camera):
-        if self.dragging_axis is None or not self.drag_start_verts_all: return
-        cs = [math3d.quad_center(v) for v in self.drag_start_verts_all.values()]
-        center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
-                  sum(c[2] for c in cs)/len(cs))
+        if self.dragging_axis is None: return
         axis_dir = GIZMO_AXES[self.dragging_axis][0]
-        t = math3d.ray_line_closest_s(tuple(camera.pos), camera.screen_ray(mx - PANEL_WIDTH, my),
-                                      center, axis_dir)
-        move = math3d.vscale(axis_dir,
-                             round((t - self.drag_axis_t0) / self.translate_snap) * self.translate_snap)
-        for i, start_verts in self.drag_start_verts_all.items():
-            if i < len(scene.quads):
-                scene.quads[i] = [math3d.vadd(v, move) for v in start_verts]
+        if self.drag_start_edge_verts:
+            verts  = list(self.drag_start_edge_verts.values())
+            n      = len(verts)
+            center = (sum(v[0] for v in verts)/n, sum(v[1] for v in verts)/n,
+                      sum(v[2] for v in verts)/n)
+            t    = math3d.ray_line_closest_s(tuple(camera.pos),
+                                             camera.screen_ray(mx - PANEL_WIDTH, my),
+                                             center, axis_dir)
+            move = math3d.vscale(axis_dir,
+                                 round((t - self.drag_axis_t0) / self.translate_snap) * self.translate_snap)
+            quad_updates = {}
+            for (qi, vi), start_v in self.drag_start_edge_verts.items():
+                quad_updates.setdefault(qi, {})[vi] = math3d.vadd(start_v, move)
+            for qi, vi_verts in quad_updates.items():
+                if qi < len(scene.quads):
+                    q = list(scene.quads[qi])
+                    for vi, new_v in vi_verts.items():
+                        q[vi] = new_v
+                    scene.quads[qi] = q
+        elif self.drag_start_verts_all:
+            cs = [math3d.quad_center(v) for v in self.drag_start_verts_all.values()]
+            center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
+                      sum(c[2] for c in cs)/len(cs))
+            t    = math3d.ray_line_closest_s(tuple(camera.pos),
+                                             camera.screen_ray(mx - PANEL_WIDTH, my),
+                                             center, axis_dir)
+            move = math3d.vscale(axis_dir,
+                                 round((t - self.drag_axis_t0) / self.translate_snap) * self.translate_snap)
+            for i, start_verts in self.drag_start_verts_all.items():
+                if i < len(scene.quads):
+                    scene.quads[i] = [math3d.vadd(v, move) for v in start_verts]
 
     # ── Drag rotation ─────────────────────────────────────────────────────────
     def _start_rotate_drag(self, axis, mx, my, scene, camera):
@@ -299,6 +342,19 @@ class Gizmo:
             self.drag_center, self.drag_wa, self.drag_ha, new_hw, new_hh)
 
     # ── Helpers internes ──────────────────────────────────────────────────────
+    def _edge_center(self, scene):
+        verts = []
+        for qi, ei in scene.selected_edges:
+            if qi < len(scene.quads):
+                q = scene.quads[qi]
+                verts.append(tuple(q[ei]))
+                verts.append(tuple(q[(ei+1) % 4]))
+        if not verts:
+            return (0.0, 0.0, 0.0)
+        n = len(verts)
+        return (sum(v[0] for v in verts)/n, sum(v[1] for v in verts)/n,
+                sum(v[2] for v in verts)/n)
+
     def _gizmo_scale(self, center, camera):
         return max(0.5, math3d.vlength(math3d.vsub(tuple(camera.pos), center)) * 0.2)
 
