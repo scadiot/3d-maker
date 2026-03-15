@@ -89,6 +89,30 @@ def quad_compose(center, wa, ha, hw, hh):
         vadd(vsub(center, vscale(wa, hw)), vscale(ha, hh)),
     ]
 
+def diagonals_intersect(a, b, c, d):
+    """Retourne True si les diagonales a-c et b-d du quad se croisent (quad non-papillon)."""
+    d1 = vsub(c, a)
+    d2 = vsub(d, b)
+    r  = vsub(a, b)
+    aa = dot(d1, d1)
+    cc = dot(d2, d2)
+    if aa < 1e-10 or cc < 1e-10:
+        return False
+    bb = dot(d1, d2)
+    dd = dot(d1, r)
+    ee = dot(d2, r)
+    denom = aa * cc - bb * bb
+    if abs(denom) < 1e-10:
+        return False  # diagonales parallèles → papillon
+    t = (bb * ee - cc * dd) / denom
+    s = (aa * ee - bb * dd) / denom
+    if not (0.0 < t < 1.0 and 0.0 < s < 1.0):
+        return False
+    pt1 = vadd(a, vscale(d1, t))
+    pt2 = vadd(b, vscale(d2, s))
+    len_ref = max(math.sqrt(aa), math.sqrt(cc))
+    return vlength(vsub(pt1, pt2)) < 0.05 * len_ref
+
 def perp_basis(axis):
     ref = (1, 0, 0) if abs(axis[0]) < 0.9 else (0, 1, 0)
     u = normalize(cross(axis, ref));  return u, normalize(cross(axis, u))

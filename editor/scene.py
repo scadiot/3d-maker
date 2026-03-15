@@ -239,6 +239,33 @@ class Scene:
         delta = math3d.vsub(c1, c2)
         self.quads[qi2] = [math3d.vadd(tuple(v), delta) for v in q2]
 
+    def create_quad_from_edges(self):
+        """Crée un nouveau quad en reliant les deux arêtes sélectionnées."""
+        if len(self.selected_edges_ordered) != 2:
+            return
+        e1, e2 = self.selected_edges_ordered
+        qi1, ei1 = e1
+        qi2, ei2 = e2
+        q1, q2 = self.quads[qi1], self.quads[qi2]
+        a = tuple(q1[ei1])
+        b = tuple(q1[(ei1 + 1) % 4])
+        c = tuple(q2[(ei2 + 1) % 4])
+        d = tuple(q2[ei2])
+        # Si les diagonales ne se croisent pas → quad papillon → inverser c et d
+        if not math3d.diagonals_intersect(a, b, c, d):
+            c, d = d, c
+        # Aligner l'orientation sur les quads sources
+        n1 = math3d.cross(math3d.vsub(tuple(q1[1]), tuple(q1[0])),
+                          math3d.vsub(tuple(q1[3]), tuple(q1[0])))
+        n2 = math3d.cross(math3d.vsub(tuple(q2[1]), tuple(q2[0])),
+                          math3d.vsub(tuple(q2[3]), tuple(q2[0])))
+        n_ref = math3d.vadd(n1, n2)
+        n_new = math3d.cross(math3d.vsub(b, a), math3d.vsub(d, a))
+        if math3d.dot(n_new, n_ref) < 0:
+            a, b, c, d = d, c, b, a
+        self.quads.append([a, b, c, d])
+        self.quad_uvs.append([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
+
     # ── Aperçu texture ────────────────────────────────────────────────────────
     def open_tex_preview(self):
         if self.tex_preview_win:
@@ -299,7 +326,7 @@ class Scene:
         glDisable(GL_CULL_FACE)
         if self.selected_edges:
             glLineWidth(4.0)
-            glColor3f(1.0, 0.05, 0.05)
+            glColor3f(0.05, 0.05, 1.0)
             glBegin(GL_LINES)
             for quad_idx, edge_idx in self.selected_edges:
                 if quad_idx < len(self.quads):

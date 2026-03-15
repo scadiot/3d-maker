@@ -39,6 +39,7 @@ class App:
         self.btn_load        = None
         self.btn_border_sel  = None
         self.btn_rapprocher  = None
+        self.btn_create_quad = None
         self.border_selection_mode = False
         self.dropdown_snap   = None
         self.dropdown_scale_snap = None
@@ -98,6 +99,10 @@ class App:
             relative_rect=pygame.Rect(15, 306, 220, 36),
             text="Rapprocher", manager=self.ui_manager)
         self.btn_rapprocher.disable()
+        self.btn_create_quad = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(15, 354, 220, 36),
+            text="Créer quad", manager=self.ui_manager)
+        self.btn_create_quad.disable()
         self.ui_tex = glGenTextures(1)
 
     def _cleanup(self):
@@ -152,6 +157,8 @@ class App:
             self.gizmo.scale_snap = float(event.text)
         if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_rapprocher:
             self.scene.rapprocher_edges()
+        if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_create_quad:
+            self.scene.create_quad_from_edges()
         if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_border_sel:
             self.border_selection_mode = not self.border_selection_mode
             if not self.border_selection_mode:
@@ -293,10 +300,13 @@ class App:
     # ── Mise à jour ───────────────────────────────────────────────────────────
     def _update(self, dt, mx, my, in_3d):
         edges = self.scene.selected_edges_ordered
-        if len(edges) == 2 and edges[0][0] != edges[1][0]:
+        two_diff = len(edges) == 2 and edges[0][0] != edges[1][0]
+        if two_diff:
             self.btn_rapprocher.enable()
+            self.btn_create_quad.enable()
         else:
             self.btn_rapprocher.disable()
+            self.btn_create_quad.disable()
 
         if self.gizmo.dragging_axis and pygame.mouse.get_pressed()[0]:
             self.gizmo.update_drag(mx, my, self.scene, self.camera)
