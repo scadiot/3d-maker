@@ -25,12 +25,13 @@ def ray_triangle(orig, dir, v0, v1, v2):
     if v < 0 or u+v > 1: return None
     t = f*dot(e2, q);  return t if t > EPS else None
 
-def ray_quad_intersect(orig, dir, quad):
-    v = [tuple(x) for x in quad]
+def ray_poly_intersect(orig, dir, poly):
+    v = [tuple(x) for x in poly]
+    if len(v) < 3: return None
     normal = cross(vsub(v[1], v[0]), vsub(v[2], v[0]))
     if dot(dir, normal) <= 0: return None  # face arrière ou perpendiculaire
-    hits = [t for t in (ray_triangle(orig, dir, v[0], v[1], v[2]),
-                        ray_triangle(orig, dir, v[0], v[2], v[3])) if t is not None]
+    hits = [t for i in range(1, len(v) - 1)
+            for t in [ray_triangle(orig, dir, v[0], v[i], v[i+1])] if t is not None]
     return min(hits) if hits else None
 
 def ray_plane_intersect(ray_o, ray_d, plane_pt, plane_n):
@@ -70,13 +71,14 @@ def rotate_point(point, center, axis, angle):
     return vadd(center, vadd(vadd(vscale(p, ca), vscale(cross(axis, p), sa)),
                              vscale(axis, dot(axis, p)*(1-ca))))
 
-def quad_center(quad):
-    return (sum(v[0] for v in quad)/4, sum(v[1] for v in quad)/4, sum(v[2] for v in quad)/4)
+def poly_center(poly):
+    n = len(poly)
+    return (sum(v[0] for v in poly)/n, sum(v[1] for v in poly)/n, sum(v[2] for v in poly)/n)
 
 def quad_decompose(quad):
     """Retourne (center, width_axis, height_axis, half_width, half_height)."""
     v0, v1, _, v3 = [tuple(v) for v in quad]
-    center = quad_center(quad)
+    center = poly_center(quad)
     wa = normalize(vsub(v1, v0));  ha = normalize(vsub(v3, v0))
     hw = vlength(vsub(v1, v0))/2;  hh = vlength(vsub(v3, v0))/2
     return center, wa, ha, hw, hh

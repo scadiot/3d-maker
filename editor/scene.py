@@ -1,4 +1,4 @@
-"""Classe Scene : quads, UVs, texture, atlas, sélection."""
+"""Classe Scene : polygons, UVs, texture, atlas, sélection."""
 
 import copy
 import json
@@ -10,7 +10,7 @@ from OpenGL.GL import (
     glColor3f, glTexCoord2f, glVertex3f, glLineWidth,
     GL_TEXTURE_2D, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR,
     GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
-    GL_CULL_FACE, GL_BACK, GL_CW, GL_QUADS, GL_LINE_LOOP, GL_LINES,
+    GL_CULL_FACE, GL_BACK, GL_CW, GL_TRIANGLE_FAN, GL_LINE_LOOP, GL_LINES,
 )
 
 from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
@@ -19,16 +19,16 @@ from editor import math3d
 
 class Scene:
     def __init__(self):
-        self.quads            = []
-        self.quad_uvs         = []
+        self.polygons         = []
+        self.poly_uvs         = []
         self.selected_idx     = -1
         self.selected_indices = set()
         self.groups           = []   # liste de sets d'indices formant des groupes
 
-        self.selected_edges         = set()    # set de (quad_idx, edge_idx)
+        self.selected_edges         = set()    # set de (poly_idx, edge_idx)
         self.selected_edges_ordered = []       # même éléments, dans l'ordre de sélection
 
-        self.quad_texture  = 0
+        self.poly_texture  = 0
         self.atlas_w       = 1
         self.atlas_h       = 1
         self.atlas_data    = {}
@@ -51,46 +51,58 @@ class Scene:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
         glBindTexture(GL_TEXTURE_2D, 0)
-        self.quad_texture = tex
+        self.poly_texture = tex
         self.atlas_w, self.atlas_h = w, h
 
-    # ── Gestion des quads ─────────────────────────────────────────────────────
-    def add_quad(self, cam_pos, cam_yaw):
+    # ── Gestion des polygons ──────────────────────────────────────────────────
+    def add_polygon(self, cam_pos, cam_yaw):
         import math as _math
         yr = _math.radians(cam_yaw)
         cx = round(cam_pos[0] - _math.sin(yr)*5)
         cz = round(cam_pos[2] - _math.cos(yr)*5)
-        self.quads.append([
+        self.polygons.append([
             (cx-1, 0.0, cz-1), (cx+1, 0.0, cz-1),
             (cx+1, 0.0, cz+1), (cx-1, 0.0, cz+1),
         ])
-        self.quad_uvs.append([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
+        self.poly_uvs.append([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
+
+    def add_triangle(self, cam_pos, cam_yaw):
+        import math as _math
+        yr = _math.radians(cam_yaw)
+        cx = round(cam_pos[0] - _math.sin(yr)*5)
+        cz = round(cam_pos[2] - _math.cos(yr)*5)
+        self.polygons.append([
+            (cx,   0.0, cz-1),
+            (cx+1, 0.0, cz+1),
+            (cx-1, 0.0, cz+1),
+        ])
+        self.poly_uvs.append([(0.5, 0.0), (1.0, 1.0), (0.0, 1.0)])
 
     def rotate_uvs(self):
-        """Décale circulairement les UVs des quads sélectionnés (v1→v2, v2→v3, …)."""
+        """Décale circulairement les UVs des polygons sélectionnés (v0→v1, v1→v2, …)."""
         for i in self.selected_indices:
-            uvs = self.quad_uvs[i]
-            self.quad_uvs[i] = [uvs[3], uvs[0], uvs[1], uvs[2]]
+            uvs = self.poly_uvs[i]
+            self.poly_uvs[i] = [uvs[-1]] + list(uvs[:-1])
 
     def flip_orientation(self):
-        """Inverse l'orientation (normale) des quads sélectionnés en retournant l'ordre des sommets."""
+        """Inverse l'orientation (normale) des polygons sélectionnés en retournant l'ordre des sommets."""
         for i in self.selected_indices:
-            self.quads[i]    = list(reversed(self.quads[i]))
-            self.quad_uvs[i] = list(reversed(self.quad_uvs[i]))
+            self.polygons[i] = list(reversed(self.polygons[i]))
+            self.poly_uvs[i] = list(reversed(self.poly_uvs[i]))
 
     def delete_selected(self):
         deleted = set(self.selected_indices)
         for i in sorted(deleted, reverse=True):
-            self.quads.pop(i)
-            self.quad_uvs.pop(i)
+            self.polygons.pop(i)
+            self.poly_uvs.pop(i)
         self._reindex_after_delete(deleted)
         sorted_deleted = sorted(deleted)
         new_edges = set()
-        for quad_idx, edge_idx in self.selected_edges:
-            if quad_idx in deleted:
+        for poly_idx, edge_idx in self.selected_edges:
+            if poly_idx in deleted:
                 continue
-            shift = sum(1 for d in sorted_deleted if d < quad_idx)
-            new_edges.add((quad_idx - shift, edge_idx))
+            shift = sum(1 for d in sorted_deleted if d < poly_idx)
+            new_edges.add((poly_idx - shift, edge_idx))
         self.selected_edges         = new_edges
         self.selected_edges_ordered = [e for e in self.selected_edges_ordered if e in new_edges]
         self.selected_idx     = -1
@@ -99,88 +111,86 @@ class Scene:
     def duplicate_selected(self):
         if not self.selected_indices:
             return
-        first_new = len(self.quads)
+        first_new = len(self.polygons)
         sorted_sel = sorted(self.selected_indices)
-        # old_idx -> new_idx
         idx_map = {old: first_new + i for i, old in enumerate(sorted_sel)}
         for i in sorted_sel:
-            self.quads.append(copy.deepcopy(self.quads[i]))
-            self.quad_uvs.append(list(self.quad_uvs[i]))
-        # Reproduire les groupes pour les nouveaux quads
+            self.polygons.append(copy.deepcopy(self.polygons[i]))
+            self.poly_uvs.append(list(self.poly_uvs[i]))
         for group in self.groups:
             new_group = {idx_map[i] for i in group if i in idx_map}
             if len(new_group) >= 2:
                 self.groups.append(new_group)
-        new_indices = set(range(first_new, len(self.quads)))
+        new_indices = set(range(first_new, len(self.polygons)))
         self.selected_indices = new_indices
         self.selected_idx     = max(new_indices)
 
     # ── Sélection ─────────────────────────────────────────────────────────────
     def selection_center(self):
-        """Barycentre de tous les quads sélectionnés."""
-        indices = [i for i in self.selected_indices if i < len(self.quads)]
+        """Barycentre de tous les polygons sélectionnés."""
+        indices = [i for i in self.selected_indices if i < len(self.polygons)]
         if not indices:
-            return math3d.quad_center(self.quads[self.selected_idx]) if self.selected_idx >= 0 else (0.0, 0.0, 0.0)
-        cs = [math3d.quad_center(self.quads[i]) for i in indices]
+            return math3d.poly_center(self.polygons[self.selected_idx]) if self.selected_idx >= 0 else (0.0, 0.0, 0.0)
+        cs = [math3d.poly_center(self.polygons[i]) for i in indices]
         return (sum(c[0] for c in cs)/len(cs),
                 sum(c[1] for c in cs)/len(cs),
                 sum(c[2] for c in cs)/len(cs))
 
-    def pick_quad(self, ray_o, ray_d):
-        """Retourne l'indice du quad le plus proche sous le rayon, ou -1."""
+    def pick_polygon(self, ray_o, ray_d):
+        """Retourne l'indice du polygon le plus proche sous le rayon, ou -1."""
         best_t, best_i = float('inf'), -1
-        for i, q in enumerate(self.quads):
-            t = math3d.ray_quad_intersect(ray_o, ray_d, q)
+        for i, p in enumerate(self.polygons):
+            t = math3d.ray_poly_intersect(ray_o, ray_d, p)
             if t is not None and t < best_t:
                 best_t, best_i = t, i
         return best_i
 
     def pick_edge(self, ray_o, ray_d):
-        """Retourne (quad_idx, edge_idx) de l'arête la plus proche du clic, ou None."""
-        best_t, best_quad = float('inf'), -1
-        for i, q in enumerate(self.quads):
-            t = math3d.ray_quad_intersect(ray_o, ray_d, q)
+        """Retourne (poly_idx, edge_idx) de l'arête la plus proche du clic, ou None."""
+        best_t, best_poly = float('inf'), -1
+        for i, p in enumerate(self.polygons):
+            t = math3d.ray_poly_intersect(ray_o, ray_d, p)
             if t is not None and t < best_t:
-                best_t, best_quad = t, i
-        if best_quad < 0:
+                best_t, best_poly = t, i
+        if best_poly < 0:
             return None
         hit = math3d.vadd(ray_o, math3d.vscale(ray_d, best_t))
-        quad = self.quads[best_quad]
+        poly = self.polygons[best_poly]
+        n = len(poly)
         best_edge, best_dist = 0, float('inf')
-        for ei in range(4):
-            a = tuple(quad[ei])
-            b = tuple(quad[(ei + 1) % 4])
+        for ei in range(n):
+            a = tuple(poly[ei])
+            b = tuple(poly[(ei + 1) % n])
             cp = math3d.closest_point_on_seg(hit, a, b)
             d = math3d.vlength(math3d.vsub(hit, cp))
             if d < best_dist:
                 best_dist, best_edge = d, ei
-        return (best_quad, best_edge)
+        return (best_poly, best_edge)
 
     # ── Groupes ───────────────────────────────────────────────────────────────
-    def get_group_for_quad(self, idx):
-        """Retourne le set du groupe contenant ce quad, ou None."""
+    def get_group_for_polygon(self, idx):
+        """Retourne le set du groupe contenant ce polygon, ou None."""
         for group in self.groups:
             if idx in group:
                 return group
         return None
 
     def group_selected(self):
-        """Groupe les quads sélectionnés (minimum 2)."""
+        """Groupe les polygons sélectionnés (minimum 2)."""
         if len(self.selected_indices) < 2:
             return
-        # Retirer les quads sélectionnés de leurs groupes existants
         for group in self.groups:
             group -= self.selected_indices
         self.groups = [g for g in self.groups if len(g) >= 2]
         self.groups.append(set(self.selected_indices))
 
     def ungroup_selected(self):
-        """Dissocie les groupes contenant des quads sélectionnés."""
+        """Dissocie les groupes contenant des polygons sélectionnés."""
         self.groups = [g for g in self.groups
                        if not g.intersection(self.selected_indices)]
 
     def _reindex_after_delete(self, deleted_indices):
-        """Met à jour les groupes après suppression de quads."""
+        """Met à jour les groupes après suppression de polygons."""
         sorted_deleted = sorted(deleted_indices)
         new_groups = []
         for group in self.groups:
@@ -196,25 +206,26 @@ class Scene:
 
     # ── Sauvegarde ────────────────────────────────────────────────────────────
     def save_json(self, path):
-        """Exporte la scène dans un fichier JSON (position, taille, axes, uvs)."""
-        quads_data = []
-        for quad, uvs in zip(self.quads, self.quad_uvs):
-            center, wa, ha, hw, hh = math3d.quad_decompose(quad)
-            quads_data.append({
-                "position": [round(v, 6) for v in center],
-                "size":     [round(hw * 2, 6), round(hh * 2, 6)],
-                "x_axis":   [round(v, 6) for v in wa],
-                "y_axis":   [round(v, 6) for v in ha],
+        """Exporte la scène dans un fichier JSON (sommets et uvs)."""
+        polys_data = []
+        for poly, uvs in zip(self.polygons, self.poly_uvs):
+            polys_data.append({
+                "vertices": [[round(v, 6) for v in vert] for vert in poly],
                 "uvs":      [[round(u, 6), round(v, 6)] for u, v in uvs],
             })
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"quads": quads_data}, f, indent=2, ensure_ascii=False)
+            json.dump({"polygons": polys_data}, f, indent=2, ensure_ascii=False)
 
     def load_json(self, path):
-        """Importe une scène depuis un fichier JSON (ajoute aux quads existants)."""
+        """Importe une scène depuis un fichier JSON (ajoute aux polygons existants)."""
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        first_new = len(self.quads)
+        first_new = len(self.polygons)
+        # Nouveau format
+        for p in data.get("polygons", []):
+            self.polygons.append([tuple(v) for v in p["vertices"]])
+            self.poly_uvs.append([tuple(uv) for uv in p["uvs"]])
+        # Ancien format (rétrocompatibilité)
         for q in data.get("quads", []):
             center = tuple(q["position"])
             hw = q["size"][0] / 2
@@ -224,53 +235,53 @@ class Scene:
                 ha = tuple(q["y_axis"])
             else:
                 wa, ha = math3d.perp_basis(tuple(q["orientation"]))
-            self.quads.append(math3d.quad_compose(center, wa, ha, hw, hh))
-            self.quad_uvs.append([tuple(uv) for uv in q["uvs"]])
-        new_indices = set(range(first_new, len(self.quads)))
+            self.polygons.append(math3d.quad_compose(center, wa, ha, hw, hh))
+            self.poly_uvs.append([tuple(uv) for uv in q["uvs"]])
+        new_indices = set(range(first_new, len(self.polygons)))
         if new_indices:
             self.selected_indices = new_indices
             self.selected_idx = max(new_indices)
 
     # ── Opérations sur arêtes ─────────────────────────────────────────────────
     def rapprocher_edges(self):
-        """Déplace le second quad pour aligner le centre de son arête sur celui du premier."""
+        """Déplace le second polygon pour aligner le centre de son arête sur celui du premier."""
         if len(self.selected_edges_ordered) != 2:
             return
         e1, e2 = self.selected_edges_ordered   # e1 = ancre, e2 = déplacé
         qi1, ei1 = e1
         qi2, ei2 = e2
-        q1, q2 = self.quads[qi1], self.quads[qi2]
-        c1 = math3d.vscale(math3d.vadd(tuple(q1[ei1]), tuple(q1[(ei1+1)%4])), 0.5)
-        c2 = math3d.vscale(math3d.vadd(tuple(q2[ei2]), tuple(q2[(ei2+1)%4])), 0.5)
+        q1, q2 = self.polygons[qi1], self.polygons[qi2]
+        c1 = math3d.vscale(math3d.vadd(tuple(q1[ei1]), tuple(q1[(ei1+1) % len(q1)])), 0.5)
+        c2 = math3d.vscale(math3d.vadd(tuple(q2[ei2]), tuple(q2[(ei2+1) % len(q2)])), 0.5)
         delta = math3d.vsub(c1, c2)
-        self.quads[qi2] = [math3d.vadd(tuple(v), delta) for v in q2]
+        self.polygons[qi2] = [math3d.vadd(tuple(v), delta) for v in q2]
 
-    def create_quad_from_edges(self):
-        """Crée un nouveau quad en reliant les deux arêtes sélectionnées."""
+    def create_polygon_from_edges(self):
+        """Crée un nouveau polygon (quad) en reliant les deux arêtes sélectionnées."""
         if len(self.selected_edges_ordered) != 2:
             return
         e1, e2 = self.selected_edges_ordered
         qi1, ei1 = e1
         qi2, ei2 = e2
-        q1, q2 = self.quads[qi1], self.quads[qi2]
+        q1, q2 = self.polygons[qi1], self.polygons[qi2]
         a = tuple(q1[ei1])
-        b = tuple(q1[(ei1 + 1) % 4])
-        c = tuple(q2[(ei2 + 1) % 4])
+        b = tuple(q1[(ei1 + 1) % len(q1)])
+        c = tuple(q2[(ei2 + 1) % len(q2)])
         d = tuple(q2[ei2])
         # Si les diagonales ne se croisent pas → quad papillon → inverser c et d
         if not math3d.diagonals_intersect(a, b, c, d):
             c, d = d, c
-        # Aligner l'orientation sur les quads sources
-        n1 = math3d.cross(math3d.vsub(tuple(q1[1]), tuple(q1[0])),
-                          math3d.vsub(tuple(q1[3]), tuple(q1[0])))
-        n2 = math3d.cross(math3d.vsub(tuple(q2[1]), tuple(q2[0])),
-                          math3d.vsub(tuple(q2[3]), tuple(q2[0])))
+        # Aligner l'orientation sur les polygons sources
+        n1 = math3d.cross(math3d.vsub(tuple(q1[1 % len(q1)]), tuple(q1[0])),
+                          math3d.vsub(tuple(q1[-1]), tuple(q1[0])))
+        n2 = math3d.cross(math3d.vsub(tuple(q2[1 % len(q2)]), tuple(q2[0])),
+                          math3d.vsub(tuple(q2[-1]), tuple(q2[0])))
         n_ref = math3d.vadd(n1, n2)
         n_new = math3d.cross(math3d.vsub(b, a), math3d.vsub(d, a))
         if math3d.dot(n_new, n_ref) < 0:
             a, b, c, d = d, c, b, a
-        self.quads.append([a, b, c, d])
-        self.quad_uvs.append([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
+        self.polygons.append([a, b, c, d])
+        self.poly_uvs.append([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
 
     # ── Aperçu texture ────────────────────────────────────────────────────────
     def open_tex_preview(self):
@@ -291,7 +302,7 @@ class Scene:
             self.tex_preview_win = None
 
     def assign_uv_from_atlas_click(self, event_pos):
-        """Applique les UVs de l'atlas au quad sélectionné selon le clic dans l'aperçu."""
+        """Applique les UVs de l'atlas au polygon sélectionné selon le clic dans l'aperçu."""
         px = int(event_pos[0] * self.atlas_w / self.tex_preview_sz)
         py = int(event_pos[1] * self.atlas_h / self.tex_preview_sz)
         entry = next((e for e in self.atlas_data["images"]
@@ -303,31 +314,33 @@ class Scene:
             # V inversé : texture uploadée verticalement retournée
             v1 = 1.0 - entry["y"] / self.atlas_h
             v0 = 1.0 - (entry["y"] + entry["height"]) / self.atlas_h
+            corners = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
             for idx in self.selected_indices:
-                self.quad_uvs[idx] = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
+                n = len(self.polygons[idx])
+                self.poly_uvs[idx] = [corners[i % 4] for i in range(n)]
 
     # ── Rendu ─────────────────────────────────────────────────────────────────
     def draw(self):
         glEnable(GL_CULL_FACE);  glCullFace(GL_BACK);  glFrontFace(GL_CW)
-        for i, quad in enumerate(self.quads):
+        for i, poly in enumerate(self.polygons):
             sel = (i in self.selected_indices)
-            uvs = self.quad_uvs[i] if i < len(self.quad_uvs) else [(0,0),(1,0),(1,1),(0,1)]
-            glEnable(GL_TEXTURE_2D);  glBindTexture(GL_TEXTURE_2D, self.quad_texture)
+            uvs = self.poly_uvs[i] if i < len(self.poly_uvs) else [(0,0),(1,0),(1,1),(0,1)]
+            glEnable(GL_TEXTURE_2D);  glBindTexture(GL_TEXTURE_2D, self.poly_texture)
             glColor3f(1.0, 1.0, 1.0)
-            glBegin(GL_QUADS)
-            for (vx, vy, vz), (u, v) in zip(quad, uvs):
+            glBegin(GL_TRIANGLE_FAN)
+            for (vx, vy, vz), (u, v) in zip(poly, uvs):
                 glTexCoord2f(u, v);  glVertex3f(vx, vy, vz)
             glEnd()
             glDisable(GL_TEXTURE_2D)
             glLineWidth(2.5 if sel else 1.5)
             if sel:
                 glColor3f(1.0, 0.15, 0.15)
-            elif self.get_group_for_quad(i) is not None:
+            elif self.get_group_for_polygon(i) is not None:
                 glColor3f(0.2, 0.7, 1.0)
             else:
                 glColor3f(1.0, 0.75, 0.35)
             glBegin(GL_LINE_LOOP)
-            for vx, vy, vz in quad: glVertex3f(vx, vy, vz)
+            for vx, vy, vz in poly: glVertex3f(vx, vy, vz)
             glEnd()
         glLineWidth(1.0)
         glDisable(GL_CULL_FACE)
@@ -335,10 +348,10 @@ class Scene:
             glLineWidth(4.0)
             glColor3f(0.05, 0.05, 1.0)
             glBegin(GL_LINES)
-            for quad_idx, edge_idx in self.selected_edges:
-                if quad_idx < len(self.quads):
-                    q = self.quads[quad_idx]
-                    glVertex3f(*q[edge_idx])
-                    glVertex3f(*q[(edge_idx + 1) % 4])
+            for poly_idx, edge_idx in self.selected_edges:
+                if poly_idx < len(self.polygons):
+                    p = self.polygons[poly_idx]
+                    glVertex3f(*p[edge_idx])
+                    glVertex3f(*p[(edge_idx + 1) % len(p)])
             glEnd()
             glLineWidth(1.0)

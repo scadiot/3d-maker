@@ -35,11 +35,12 @@ class App:
         self.clock           = None
         self.ui_manager      = None
         self.btn_add         = None
+        self.btn_add_tri     = None
         self.btn_save        = None
         self.btn_load        = None
         self.btn_border_sel  = None
         self.btn_rapprocher  = None
-        self.btn_create_quad = None
+        self.btn_create_polygon = None
         self.border_selection_mode = False
         self.dropdown_snap   = None
         self.dropdown_scale_snap = None
@@ -75,41 +76,44 @@ class App:
 
         self.btn_add = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect(15, 15, 220, 36),
-            text="Ajouter quad", manager=self.ui_manager)
+            text="Ajouter polygon", manager=self.ui_manager)
+        self.btn_add_tri = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(15, 60, 220, 36),
+            text="Ajouter triangle", manager=self.ui_manager)
         self.dropdown_snap = pygame_gui.elements.UIDropDownMenu(
             options_list=['1', '0.5', '0.25', '0.1', '0.05'],
             starting_option=str(self.gizmo.translate_snap),
-            relative_rect=pygame.Rect(15, 60, 220, 36),
+            relative_rect=pygame.Rect(15, 108, 220, 36),
             manager=self.ui_manager)
         self.dropdown_scale_snap = pygame_gui.elements.UIDropDownMenu(
             options_list=['1', '0.5', '0.25', '0.1', '0.05'],
             starting_option=str(self.gizmo.scale_snap),
-            relative_rect=pygame.Rect(15, 108, 220, 36),
+            relative_rect=pygame.Rect(15, 156, 220, 36),
             manager=self.ui_manager)
         self.btn_save = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(15, 162, 220, 36),
+            relative_rect=pygame.Rect(15, 210, 220, 36),
             text="Enregistrer JSON", manager=self.ui_manager)
         self.btn_load = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(15, 210, 220, 36),
+            relative_rect=pygame.Rect(15, 258, 220, 36),
             text="Charger JSON", manager=self.ui_manager)
         self.btn_border_sel = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(15, 258, 220, 36),
+            relative_rect=pygame.Rect(15, 306, 220, 36),
             text="Sélection arête : OFF", manager=self.ui_manager)
         self.btn_rapprocher = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(15, 306, 220, 36),
+            relative_rect=pygame.Rect(15, 354, 220, 36),
             text="Rapprocher", manager=self.ui_manager)
         self.btn_rapprocher.disable()
-        self.btn_create_quad = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(15, 354, 220, 36),
-            text="Créer quad", manager=self.ui_manager)
-        self.btn_create_quad.disable()
+        self.btn_create_polygon = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(15, 402, 220, 36),
+            text="Créer polygon", manager=self.ui_manager)
+        self.btn_create_polygon.disable()
         self.ui_tex = glGenTextures(1)
 
     def _cleanup(self):
         self.scene.close_tex_preview()
         self.ui_manager.clear_and_reset()
         glDeleteTextures(1, [self.ui_tex])
-        glDeleteTextures(1, [self.scene.quad_texture])
+        glDeleteTextures(1, [self.scene.poly_texture])
         pygame.quit()
 
     # ── Événements ────────────────────────────────────────────────────────────
@@ -144,7 +148,9 @@ class App:
 
     def _handle_ui_event(self, event):
         if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_add:
-            self.scene.add_quad(self.camera.pos, self.camera.yaw)
+            self.scene.add_polygon(self.camera.pos, self.camera.yaw)
+        if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_add_tri:
+            self.scene.add_triangle(self.camera.pos, self.camera.yaw)
         if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_save:
             self._save_json_dialog()
         if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_load:
@@ -157,8 +163,8 @@ class App:
             self.gizmo.scale_snap = float(event.text)
         if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_rapprocher:
             self.scene.rapprocher_edges()
-        if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_create_quad:
-            self.scene.create_quad_from_edges()
+        if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_create_polygon:
+            self.scene.create_polygon_from_edges()
         if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_border_sel:
             self.border_selection_mode = not self.border_selection_mode
             if not self.border_selection_mode:
@@ -216,7 +222,7 @@ class App:
             elif self.border_selection_mode:
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
-                self._apply_selection(self._pick_quad(mx, my), ctrl_held)
+                self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
 
         elif self.gizmo.mode == 'rotate':
             axis = self.gizmo.pick_rotate_axis(mx, my, self.scene, self.camera)
@@ -225,7 +231,7 @@ class App:
             elif self.border_selection_mode:
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
-                self._apply_selection(self._pick_quad(mx, my), ctrl_held)
+                self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
                 if len(self.scene.selected_indices) <= 1:
                     self.gizmo.mode = 'translate'
 
@@ -236,7 +242,7 @@ class App:
             elif self.border_selection_mode:
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
-                self._apply_selection(self._pick_quad(mx, my), ctrl_held)
+                self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
                 if len(self.scene.selected_indices) <= 1:
                     self.gizmo.mode = 'translate'
 
@@ -264,10 +270,10 @@ class App:
             self.scene.load_json(path)
             self.gizmo.stop_drag()
 
-    def _pick_quad(self, mx, my):
+    def _pick_polygon(self, mx, my):
         ray_o = tuple(self.camera.pos)
         ray_d = self.camera.screen_ray(mx - PANEL_WIDTH, my)
-        return self.scene.pick_quad(ray_o, ray_d)
+        return self.scene.pick_polygon(ray_o, ray_d)
 
     def _pick_edge(self, mx, my):
         ray_o = tuple(self.camera.pos)
@@ -293,7 +299,7 @@ class App:
 
     def _apply_selection(self, clicked_idx, ctrl_held):
         """Applique la sélection selon Ctrl, en expandant aux groupes."""
-        group = self.scene.get_group_for_quad(clicked_idx) if clicked_idx >= 0 else None
+        group = self.scene.get_group_for_polygon(clicked_idx) if clicked_idx >= 0 else None
         to_select = group if group else ({clicked_idx} if clicked_idx >= 0 else set())
 
         if ctrl_held:
@@ -315,10 +321,10 @@ class App:
         two_diff = len(edges) == 2 and edges[0][0] != edges[1][0]
         if two_diff:
             self.btn_rapprocher.enable()
-            self.btn_create_quad.enable()
+            self.btn_create_polygon.enable()
         else:
             self.btn_rapprocher.disable()
-            self.btn_create_quad.disable()
+            self.btn_create_polygon.disable()
 
         if self.gizmo.dragging_axis and pygame.mouse.get_pressed()[0]:
             self.gizmo.update_drag(mx, my, self.scene, self.camera)
