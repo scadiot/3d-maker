@@ -297,13 +297,14 @@ class Scene:
         entry = next((e for e in self.atlas_data["images"]
                       if e["x"] <= px < e["x"]+e["width"]
                       and e["y"] <= py < e["y"]+e["height"]), None)
-        if entry and self.selected_idx >= 0:
+        if entry and self.selected_indices:
             u0 = entry["x"] / self.atlas_w
             u1 = (entry["x"] + entry["width"]) / self.atlas_w
             # V inversé : texture uploadée verticalement retournée
             v1 = 1.0 - entry["y"] / self.atlas_h
             v0 = 1.0 - (entry["y"] + entry["height"]) / self.atlas_h
-            self.quad_uvs[self.selected_idx] = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
+            for idx in self.selected_indices:
+                self.quad_uvs[idx] = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
 
     # ── Rendu ─────────────────────────────────────────────────────────────────
     def draw(self):
