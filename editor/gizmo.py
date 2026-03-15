@@ -79,6 +79,8 @@ class Gizmo:
 
         # État drag arêtes : {(qi, vi): sommet_départ}
         self.drag_start_edge_verts = {}
+        # État drag vertices : {(qi, vi): sommet_départ}
+        self.drag_start_vertex_verts = {}
 
     # ── Mode ──────────────────────────────────────────────────────────────────
     def cycle_mode(self, multi_selected):
@@ -89,14 +91,18 @@ class Gizmo:
         self.dragging_axis = None
 
     def stop_drag(self):
-        self.dragging_axis         = None
-        self.drag_start_verts      = None
-        self.drag_start_edge_verts = {}
+        self.dragging_axis           = None
+        self.drag_start_verts        = None
+        self.drag_start_edge_verts   = {}
+        self.drag_start_vertex_verts = {}
 
     # ── Dessin ────────────────────────────────────────────────────────────────
     def draw(self, scene, camera):
         if scene.selected_edges:
             self._draw_translate(self._edge_center(scene), camera, self.dragging_axis)
+            return
+        if scene.selected_vertices:
+            self._draw_translate(self._vertex_center(scene), camera, self.dragging_axis)
             return
         if not scene.selected_indices:
             return
@@ -159,6 +165,8 @@ class Gizmo:
     def pick_translate_axis(self, mx, my, scene, camera):
         if scene.selected_edges:
             center = self._edge_center(scene)
+        elif scene.selected_vertices:
+            center = self._vertex_center(scene)
         elif scene.selected_indices:
             center = scene.selection_center()
         else:
@@ -225,7 +233,8 @@ class Gizmo:
     def _start_translate_drag(self, axis, mx, my, scene, camera):
         self.dragging_axis = axis
         if scene.selected_edges:
-            self.drag_start_edge_verts = {}
+            self.drag_start_edge_verts   = {}
+            self.drag_start_vertex_verts = {}
             for qi, ei in scene.selected_edges:
                 if qi < len(scene.polygons):
                     q = scene.polygons[qi]
@@ -233,10 +242,21 @@ class Gizmo:
                     self.drag_start_edge_verts[(qi, (ei+1) % len(q))] = tuple(q[(ei+1) % len(q)])
             self.drag_start_verts_all = {}
             center = self._edge_center(scene)
+        elif scene.selected_vertices:
+            self.drag_start_edge_verts   = {}
+            self.drag_start_vertex_verts = {}
+            for qi, vi in scene.selected_vertices:
+                if qi < len(scene.polygons):
+                    q = scene.polygons[qi]
+                    if vi < len(q):
+                        self.drag_start_vertex_verts[(qi, vi)] = tuple(q[vi])
+            self.drag_start_verts_all = {}
+            center = self._vertex_center(scene)
         else:
-            self.drag_start_edge_verts = {}
-            self.drag_start_verts_all  = {i: list(scene.polygons[i])
-                                          for i in scene.selected_indices if i < len(scene.polygons)}
+            self.drag_start_edge_verts   = {}
+            self.drag_start_vertex_verts = {}
+            self.drag_start_verts_all    = {i: list(scene.polygons[i])
+                                            for i in scene.selected_indices if i < len(scene.polygons)}
             if not self.drag_start_verts_all and scene.selected_idx >= 0:
                 self.drag_start_verts_all = {scene.selected_idx: list(scene.polygons[scene.selected_idx])}
             self.drag_start_verts = self.drag_start_verts_all.get(scene.selected_idx)
@@ -250,7 +270,23 @@ class Gizmo:
     def _update_translate_drag(self, mx, my, scene, camera):
         if self.dragging_axis is None: return
         axis_dir = GIZMO_AXES[self.dragging_axis][0]
-        if self.drag_start_edge_verts:
+        if self.drag_start_vertex_verts:
+            verts  = list(self.drag_start_vertex_verts.values())
+            n      = len(verts)
+            center = (sum(v[0] for v in verts)/n, sum(v[1] for v in verts)/n,
+                      sum(v[2] for v in verts)/n)
+            t    = math3d.ray_line_closest_s(tuple(camera.pos),
+                                             camera.screen_ray(mx - PANEL_WIDTH, my),
+                                             center, axis_dir)
+            move = math3d.vscale(axis_dir,
+                                 round((t - self.drag_axis_t0) / self.translate_snap) * self.translate_snap)
+            for (qi, vi), start_v in self.drag_start_vertex_verts.items():
+                if qi < len(scene.polygons):
+                    q = list(scene.polygons[qi])
+                    if vi < len(q):
+                        q[vi] = math3d.vadd(start_v, move)
+                    scene.polygons[qi] = q
+        elif self.drag_start_edge_verts:
             verts  = list(self.drag_start_edge_verts.values())
             n      = len(verts)
             center = (sum(v[0] for v in verts)/n, sum(v[1] for v in verts)/n,
@@ -347,6 +383,19 @@ class Gizmo:
             self.drag_center, self.drag_wa, self.drag_ha, new_hw, new_hh)
 
     # ── Helpers internes ──────────────────────────────────────────────────────
+    def _vertex_center(self, scene):
+        verts = []
+        for qi, vi in scene.selected_vertices:
+            if qi < len(scene.polygons):
+                q = scene.polygons[qi]
+                if vi < len(q):
+                    verts.append(tuple(q[vi]))
+        if not verts:
+            return (0.0, 0.0, 0.0)
+        n = len(verts)
+        return (sum(v[0] for v in verts)/n, sum(v[1] for v in verts)/n,
+                sum(v[2] for v in verts)/n)
+
     def _edge_center(self, scene):
         verts = []
         for qi, ei in scene.selected_edges:

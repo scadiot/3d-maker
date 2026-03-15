@@ -219,6 +219,14 @@ class App:
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             return
 
+        if self.selection_mode == 'vertex' and self.scene.selected_vertices:
+            axis = self.gizmo.pick_translate_axis(mx, my, self.scene, self.camera)
+            if axis:
+                self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
+            else:
+                self._apply_vertex_selection(self._pick_vertex(mx, my), ctrl_held)
+            return
+
         if self.selection_mode == 'vertex':
             self._apply_vertex_selection(self._pick_vertex(mx, my), ctrl_held)
             return
