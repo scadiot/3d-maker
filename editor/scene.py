@@ -72,6 +72,12 @@ class Scene:
             uvs = self.quad_uvs[i]
             self.quad_uvs[i] = [uvs[3], uvs[0], uvs[1], uvs[2]]
 
+    def flip_orientation(self):
+        """Inverse l'orientation (normale) des quads sélectionnés en retournant l'ordre des sommets."""
+        for i in self.selected_indices:
+            self.quads[i]    = list(reversed(self.quads[i]))
+            self.quad_uvs[i] = list(reversed(self.quad_uvs[i]))
+
     def delete_selected(self):
         deleted = set(self.selected_indices)
         for i in sorted(deleted, reverse=True):

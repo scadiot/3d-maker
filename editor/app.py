@@ -6,7 +6,7 @@ from tkinter import filedialog
 import pygame
 import pygame_gui
 from pygame.locals import (DOUBLEBUF, OPENGL, QUIT, KEYDOWN,
-                           K_SPACE, K_c, K_DELETE, K_t, K_g, K_h, K_r)
+                           K_SPACE, K_c, K_DELETE, K_t, K_g, K_h, K_r, K_n)
 from OpenGL.GL import (
     glEnable, glClearColor, glClear, glViewport,
     glMatrixMode, glLoadIdentity, glRotatef, glTranslatef,
@@ -192,6 +192,9 @@ class App:
 
         if event.key == K_r and self.scene.selected_indices:
             self.scene.rotate_uvs()
+
+        if event.key == K_n and self.scene.selected_indices:
+            self.scene.flip_orientation()
 
     def _handle_mouse_down_3d(self, mx, my):
         ctrl_held = bool(pygame.key.get_mods() & pygame.KMOD_CTRL)
