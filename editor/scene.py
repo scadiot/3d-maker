@@ -73,12 +73,23 @@ class Scene:
         self.selected_indices = set()
 
     def duplicate_selected(self):
-        if self.selected_idx < 0 or len(self.selected_indices) != 1:
+        if not self.selected_indices:
             return
-        self.quads.append(copy.deepcopy(self.quads[self.selected_idx]))
-        self.quad_uvs.append(list(self.quad_uvs[self.selected_idx]))
-        self.selected_idx     = len(self.quads) - 1
-        self.selected_indices = {self.selected_idx}
+        first_new = len(self.quads)
+        sorted_sel = sorted(self.selected_indices)
+        # old_idx -> new_idx
+        idx_map = {old: first_new + i for i, old in enumerate(sorted_sel)}
+        for i in sorted_sel:
+            self.quads.append(copy.deepcopy(self.quads[i]))
+            self.quad_uvs.append(list(self.quad_uvs[i]))
+        # Reproduire les groupes pour les nouveaux quads
+        for group in self.groups:
+            new_group = {idx_map[i] for i in group if i in idx_map}
+            if len(new_group) >= 2:
+                self.groups.append(new_group)
+        new_indices = set(range(first_new, len(self.quads)))
+        self.selected_indices = new_indices
+        self.selected_idx     = max(new_indices)
 
     # ── Sélection ─────────────────────────────────────────────────────────────
     def selection_center(self):
