@@ -63,6 +63,12 @@ class Scene:
         ])
         self.quad_uvs.append([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
 
+    def rotate_uvs(self):
+        """Décale circulairement les UVs des quads sélectionnés (v1→v2, v2→v3, …)."""
+        for i in self.selected_indices:
+            uvs = self.quad_uvs[i]
+            self.quad_uvs[i] = [uvs[3], uvs[0], uvs[1], uvs[2]]
+
     def delete_selected(self):
         deleted = set(self.selected_indices)
         for i in sorted(deleted, reverse=True):
