@@ -7,10 +7,10 @@ import pygame
 from OpenGL.GL import (
     glGenTextures, glBindTexture, glTexImage2D, glTexParameteri,
     glEnable, glDisable, glCullFace, glFrontFace, glBegin, glEnd,
-    glColor3f, glTexCoord2f, glVertex3f, glLineWidth,
+    glColor3f, glTexCoord2f, glVertex3f, glLineWidth, glPointSize,
     GL_TEXTURE_2D, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR,
     GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
-    GL_CULL_FACE, GL_BACK, GL_CW, GL_TRIANGLE_FAN, GL_LINE_LOOP, GL_LINES,
+    GL_CULL_FACE, GL_BACK, GL_CW, GL_TRIANGLE_FAN, GL_LINE_LOOP, GL_LINES, GL_POINTS,
 )
 
 from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
@@ -27,6 +27,8 @@ class Scene:
 
         self.selected_edges         = set()    # set de (poly_idx, edge_idx)
         self.selected_edges_ordered = []       # même éléments, dans l'ordre de sélection
+
+        self.selected_vertices      = set()    # set de (poly_idx, vertex_idx)
 
         self.poly_texture  = 0
         self.atlas_w       = 1
@@ -105,6 +107,13 @@ class Scene:
             new_edges.add((poly_idx - shift, edge_idx))
         self.selected_edges         = new_edges
         self.selected_edges_ordered = [e for e in self.selected_edges_ordered if e in new_edges]
+        new_verts = set()
+        for poly_idx, vert_idx in self.selected_vertices:
+            if poly_idx in deleted:
+                continue
+            shift = sum(1 for d in sorted_deleted if d < poly_idx)
+            new_verts.add((poly_idx - shift, vert_idx))
+        self.selected_vertices = new_verts
         self.selected_idx     = -1
         self.selected_indices = set()
 
@@ -166,6 +175,24 @@ class Scene:
             if d < best_dist:
                 best_dist, best_edge = d, ei
         return (best_poly, best_edge)
+
+    def pick_vertex(self, ray_o, ray_d):
+        """Retourne (poly_idx, vertex_idx) du sommet le plus proche du clic, ou None."""
+        best_t, best_poly = float('inf'), -1
+        for i, p in enumerate(self.polygons):
+            t = math3d.ray_poly_intersect(ray_o, ray_d, p)
+            if t is not None and t < best_t:
+                best_t, best_poly = t, i
+        if best_poly < 0:
+            return None
+        hit = math3d.vadd(ray_o, math3d.vscale(ray_d, best_t))
+        poly = self.polygons[best_poly]
+        best_vi, best_dist = 0, float('inf')
+        for vi, v in enumerate(poly):
+            d = math3d.vlength(math3d.vsub(hit, tuple(v)))
+            if d < best_dist:
+                best_dist, best_vi = d, vi
+        return (best_poly, best_vi)
 
     # ── Groupes ───────────────────────────────────────────────────────────────
     def get_group_for_polygon(self, idx):
@@ -364,3 +391,14 @@ class Scene:
                     glVertex3f(*p[(edge_idx + 1) % len(p)])
             glEnd()
             glLineWidth(1.0)
+        if self.selected_vertices:
+            glPointSize(8.0)
+            glColor3f(0.05, 1.0, 0.3)
+            glBegin(GL_POINTS)
+            for poly_idx, vert_idx in self.selected_vertices:
+                if poly_idx < len(self.polygons):
+                    p = self.polygons[poly_idx]
+                    if vert_idx < len(p):
+                        glVertex3f(*p[vert_idx])
+            glEnd()
+            glPointSize(1.0)

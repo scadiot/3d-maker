@@ -38,10 +38,10 @@ class App:
         self.btn_add_tri     = None
         self.btn_save        = None
         self.btn_load        = None
-        self.btn_border_sel  = None
+        self.dropdown_selection_mode = None
         self.btn_rapprocher  = None
         self.btn_create_polygon = None
-        self.border_selection_mode = False
+        self.selection_mode = 'polygon'  # 'polygon', 'edge', 'vertex'
         self.dropdown_snap   = None
         self.dropdown_scale_snap = None
         self.ui_tex     = 0
@@ -96,9 +96,11 @@ class App:
         self.btn_load = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect(15, 258, 220, 36),
             text="Charger JSON", manager=self.ui_manager)
-        self.btn_border_sel = pygame_gui.elements.UIButton(
+        self.dropdown_selection_mode = pygame_gui.elements.UIDropDownMenu(
+            options_list=['Polygon', 'Arête', 'Vertex'],
+            starting_option='Polygon',
             relative_rect=pygame.Rect(15, 306, 220, 36),
-            text="Sélection arête : OFF", manager=self.ui_manager)
+            manager=self.ui_manager)
         self.btn_rapprocher = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect(15, 354, 220, 36),
             text="Rapprocher", manager=self.ui_manager)
@@ -165,13 +167,15 @@ class App:
             self.scene.rapprocher_edges()
         if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_create_polygon:
             self.scene.create_polygon_from_edges()
-        if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_border_sel:
-            self.border_selection_mode = not self.border_selection_mode
-            if not self.border_selection_mode:
+        if (event.type == pygame_gui.UI_DROP_DOWN_MENU_CHANGED
+                and event.ui_element == self.dropdown_selection_mode):
+            mode_map = {'Polygon': 'polygon', 'Arête': 'edge', 'Vertex': 'vertex'}
+            self.selection_mode = mode_map[event.text]
+            if self.selection_mode != 'edge':
                 self.scene.selected_edges.clear()
                 self.scene.selected_edges_ordered.clear()
-            label = "Sélection arête : ON" if self.border_selection_mode else "Sélection arête : OFF"
-            self.btn_border_sel.set_text(label)
+            if self.selection_mode != 'vertex':
+                self.scene.selected_vertices.clear()
 
     def _handle_keyboard(self, event):
         if event.key == K_t and self.scene.selected_idx >= 0:
@@ -207,7 +211,7 @@ class App:
         multi     = len(self.scene.selected_indices) > 1
 
         # Arêtes sélectionnées : gizmo translate uniquement, sinon sélection d'arête
-        if self.border_selection_mode and self.scene.selected_edges:
+        if self.selection_mode == 'edge' and self.scene.selected_edges:
             axis = self.gizmo.pick_translate_axis(mx, my, self.scene, self.camera)
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
@@ -215,11 +219,15 @@ class App:
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             return
 
+        if self.selection_mode == 'vertex':
+            self._apply_vertex_selection(self._pick_vertex(mx, my), ctrl_held)
+            return
+
         if self.gizmo.mode == 'translate' or (multi and self.gizmo.mode == 'scale'):
             axis = self.gizmo.pick_translate_axis(mx, my, self.scene, self.camera)
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
-            elif self.border_selection_mode:
+            elif self.selection_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
@@ -228,7 +236,7 @@ class App:
             axis = self.gizmo.pick_rotate_axis(mx, my, self.scene, self.camera)
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
-            elif self.border_selection_mode:
+            elif self.selection_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
@@ -239,7 +247,7 @@ class App:
             handle = self.gizmo.pick_scale_handle(mx, my, self.scene, self.camera)
             if handle:
                 self.gizmo.start_drag(handle, mx, my, self.scene, self.camera)
-            elif self.border_selection_mode:
+            elif self.selection_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
@@ -279,6 +287,24 @@ class App:
         ray_o = tuple(self.camera.pos)
         ray_d = self.camera.screen_ray(mx - PANEL_WIDTH, my)
         return self.scene.pick_edge(ray_o, ray_d)
+
+    def _pick_vertex(self, mx, my):
+        ray_o = tuple(self.camera.pos)
+        ray_d = self.camera.screen_ray(mx - PANEL_WIDTH, my)
+        return self.scene.pick_vertex(ray_o, ray_d)
+
+    def _apply_vertex_selection(self, vertex, ctrl_held):
+        if vertex is None:
+            if not ctrl_held:
+                self.scene.selected_vertices.clear()
+            return
+        if ctrl_held:
+            if vertex in self.scene.selected_vertices:
+                self.scene.selected_vertices.discard(vertex)
+            else:
+                self.scene.selected_vertices.add(vertex)
+        else:
+            self.scene.selected_vertices = {vertex}
 
     def _apply_edge_selection(self, edge, ctrl_held):
         if edge is None:
