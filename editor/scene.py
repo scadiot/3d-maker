@@ -280,8 +280,17 @@ class Scene:
         n_new = math3d.cross(math3d.vsub(b, a), math3d.vsub(d, a))
         if math3d.dot(n_new, n_ref) < 0:
             a, b, c, d = d, c, b, a
-        self.polygons.append([a, b, c, d])
-        self.poly_uvs.append([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
+        # Dédupliquer les vertex coïncidents → triangle si deux vertex sont au même endroit
+        verts = [a, b, c, d]
+        unique = [verts[0]]
+        for v in verts[1:]:
+            if not any(math3d.vlength(math3d.vsub(v, u)) < 1e-6 for u in unique):
+                unique.append(v)
+        if len(unique) < 3:
+            return  # dégénéré, on n'ajoute rien
+        self.polygons.append(unique)
+        quad_uvs = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+        self.poly_uvs.append(quad_uvs[:len(unique)])
 
     # ── Aperçu texture ────────────────────────────────────────────────────────
     def open_tex_preview(self):
