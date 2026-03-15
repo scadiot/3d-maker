@@ -10,7 +10,7 @@ from OpenGL.GL import (
     glColor3f, glTexCoord2f, glVertex3f, glLineWidth,
     GL_TEXTURE_2D, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR,
     GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
-    GL_CULL_FACE, GL_BACK, GL_CW, GL_QUADS, GL_LINE_LOOP,
+    GL_CULL_FACE, GL_BACK, GL_CW, GL_QUADS, GL_LINE_LOOP, GL_LINES,
 )
 
 from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
@@ -24,6 +24,8 @@ class Scene:
         self.selected_idx     = -1
         self.selected_indices = set()
         self.groups           = []   # liste de sets d'indices formant des groupes
+
+        self.selected_edges   = set()   # set de (quad_idx, edge_idx)
 
         self.quad_texture  = 0
         self.atlas_w       = 1
@@ -75,6 +77,14 @@ class Scene:
             self.quads.pop(i)
             self.quad_uvs.pop(i)
         self._reindex_after_delete(deleted)
+        sorted_deleted = sorted(deleted)
+        new_edges = set()
+        for quad_idx, edge_idx in self.selected_edges:
+            if quad_idx in deleted:
+                continue
+            shift = sum(1 for d in sorted_deleted if d < quad_idx)
+            new_edges.add((quad_idx - shift, edge_idx))
+        self.selected_edges   = new_edges
         self.selected_idx     = -1
         self.selected_indices = set()
 
@@ -116,6 +126,27 @@ class Scene:
             if t is not None and t < best_t:
                 best_t, best_i = t, i
         return best_i
+
+    def pick_edge(self, ray_o, ray_d):
+        """Retourne (quad_idx, edge_idx) de l'arête la plus proche du clic, ou None."""
+        best_t, best_quad = float('inf'), -1
+        for i, q in enumerate(self.quads):
+            t = math3d.ray_quad_intersect(ray_o, ray_d, q)
+            if t is not None and t < best_t:
+                best_t, best_quad = t, i
+        if best_quad < 0:
+            return None
+        hit = math3d.vadd(ray_o, math3d.vscale(ray_d, best_t))
+        quad = self.quads[best_quad]
+        best_edge, best_dist = 0, float('inf')
+        for ei in range(4):
+            a = tuple(quad[ei])
+            b = tuple(quad[(ei + 1) % 4])
+            cp = math3d.closest_point_on_seg(hit, a, b)
+            d = math3d.vlength(math3d.vsub(hit, cp))
+            if d < best_dist:
+                best_dist, best_edge = d, ei
+        return (best_quad, best_edge)
 
     # ── Groupes ───────────────────────────────────────────────────────────────
     def get_group_for_quad(self, idx):
@@ -250,3 +281,14 @@ class Scene:
             glEnd()
         glLineWidth(1.0)
         glDisable(GL_CULL_FACE)
+        if self.selected_edges:
+            glLineWidth(4.0)
+            glColor3f(1.0, 0.05, 0.05)
+            glBegin(GL_LINES)
+            for quad_idx, edge_idx in self.selected_edges:
+                if quad_idx < len(self.quads):
+                    q = self.quads[quad_idx]
+                    glVertex3f(*q[edge_idx])
+                    glVertex3f(*q[(edge_idx + 1) % 4])
+            glEnd()
+            glLineWidth(1.0)

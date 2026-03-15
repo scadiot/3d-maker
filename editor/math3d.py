@@ -46,6 +46,14 @@ def ray_line_closest_s(ray_o, ray_d, line_o, line_d):
     denom = a*c - b*b
     return (a*e - b*d)/denom if abs(denom) > 1e-10 else 0.0
 
+def closest_point_on_seg(p, a, b):
+    ab = vsub(b, a)
+    len2 = dot(ab, ab)
+    if len2 < 1e-10:
+        return a
+    t = max(0.0, min(1.0, dot(vsub(p, a), ab) / len2))
+    return vadd(a, vscale(ab, t))
+
 def seg_dist_2d(px, py, ax, ay, bx, by):
     dx, dy = bx-ax, by-ay;  len2 = dx*dx + dy*dy
     if len2 < 1e-10: return math.hypot(px-ax, py-ay)
