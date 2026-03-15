@@ -38,6 +38,7 @@ class App:
         self.btn_save        = None
         self.btn_load        = None
         self.btn_border_sel  = None
+        self.btn_rapprocher  = None
         self.border_selection_mode = False
         self.dropdown_snap   = None
         self.dropdown_scale_snap = None
@@ -93,6 +94,10 @@ class App:
         self.btn_border_sel = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect(15, 258, 220, 36),
             text="Sélection arête : OFF", manager=self.ui_manager)
+        self.btn_rapprocher = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(15, 306, 220, 36),
+            text="Rapprocher", manager=self.ui_manager)
+        self.btn_rapprocher.disable()
         self.ui_tex = glGenTextures(1)
 
     def _cleanup(self):
@@ -145,10 +150,13 @@ class App:
         if (event.type == pygame_gui.UI_DROP_DOWN_MENU_CHANGED
                 and event.ui_element == self.dropdown_scale_snap):
             self.gizmo.scale_snap = float(event.text)
+        if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_rapprocher:
+            self.scene.rapprocher_edges()
         if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.btn_border_sel:
             self.border_selection_mode = not self.border_selection_mode
             if not self.border_selection_mode:
                 self.scene.selected_edges.clear()
+                self.scene.selected_edges_ordered.clear()
             label = "Sélection arête : ON" if self.border_selection_mode else "Sélection arête : OFF"
             self.btn_border_sel.set_text(label)
 
@@ -251,14 +259,18 @@ class App:
         if edge is None:
             if not ctrl_held:
                 self.scene.selected_edges.clear()
+                self.scene.selected_edges_ordered.clear()
             return
         if ctrl_held:
             if edge in self.scene.selected_edges:
                 self.scene.selected_edges.discard(edge)
+                self.scene.selected_edges_ordered.remove(edge)
             else:
                 self.scene.selected_edges.add(edge)
+                self.scene.selected_edges_ordered.append(edge)
         else:
             self.scene.selected_edges = {edge}
+            self.scene.selected_edges_ordered = [edge]
 
     def _apply_selection(self, clicked_idx, ctrl_held):
         """Applique la sélection selon Ctrl, en expandant aux groupes."""
@@ -280,6 +292,12 @@ class App:
 
     # ── Mise à jour ───────────────────────────────────────────────────────────
     def _update(self, dt, mx, my, in_3d):
+        edges = self.scene.selected_edges_ordered
+        if len(edges) == 2 and edges[0][0] != edges[1][0]:
+            self.btn_rapprocher.enable()
+        else:
+            self.btn_rapprocher.disable()
+
         if self.gizmo.dragging_axis and pygame.mouse.get_pressed()[0]:
             self.gizmo.update_drag(mx, my, self.scene, self.camera)
 

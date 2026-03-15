@@ -25,7 +25,8 @@ class Scene:
         self.selected_indices = set()
         self.groups           = []   # liste de sets d'indices formant des groupes
 
-        self.selected_edges   = set()   # set de (quad_idx, edge_idx)
+        self.selected_edges         = set()    # set de (quad_idx, edge_idx)
+        self.selected_edges_ordered = []       # même éléments, dans l'ordre de sélection
 
         self.quad_texture  = 0
         self.atlas_w       = 1
@@ -84,7 +85,8 @@ class Scene:
                 continue
             shift = sum(1 for d in sorted_deleted if d < quad_idx)
             new_edges.add((quad_idx - shift, edge_idx))
-        self.selected_edges   = new_edges
+        self.selected_edges         = new_edges
+        self.selected_edges_ordered = [e for e in self.selected_edges_ordered if e in new_edges]
         self.selected_idx     = -1
         self.selected_indices = set()
 
@@ -222,6 +224,20 @@ class Scene:
         if new_indices:
             self.selected_indices = new_indices
             self.selected_idx = max(new_indices)
+
+    # ── Opérations sur arêtes ─────────────────────────────────────────────────
+    def rapprocher_edges(self):
+        """Déplace le second quad pour aligner le centre de son arête sur celui du premier."""
+        if len(self.selected_edges_ordered) != 2:
+            return
+        e1, e2 = self.selected_edges_ordered   # e1 = ancre, e2 = déplacé
+        qi1, ei1 = e1
+        qi2, ei2 = e2
+        q1, q2 = self.quads[qi1], self.quads[qi2]
+        c1 = math3d.vscale(math3d.vadd(tuple(q1[ei1]), tuple(q1[(ei1+1)%4])), 0.5)
+        c2 = math3d.vscale(math3d.vadd(tuple(q2[ei2]), tuple(q2[(ei2+1)%4])), 0.5)
+        delta = math3d.vsub(c1, c2)
+        self.quads[qi2] = [math3d.vadd(tuple(v), delta) for v in q2]
 
     # ── Aperçu texture ────────────────────────────────────────────────────────
     def open_tex_preview(self):
