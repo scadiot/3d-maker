@@ -11,7 +11,7 @@ from OpenGL.GL import (
     GL_LINES, GL_TRIANGLE_FAN, GL_QUADS, GL_LINE_LOOP, GL_DEPTH_TEST,
 )
 
-from editor.constants import GIZMO_MODES, GIZMO_AXES, SCALE_COLORS, PANEL_WIDTH
+from editor.constants import GIZMO_MODES, GIZMO_AXES, SCALE_COLORS
 from editor import math3d
 
 
@@ -172,12 +172,12 @@ class Gizmo:
         else:
             return None
         scale  = self._gizmo_scale(center, camera)
-        vx, vy = mx - PANEL_WIDTH, my;  best, best_d = None, 10.0
+        best, best_d = None, 10.0
         for name, (axis_dir, _) in GIZMO_AXES.items():
             p0 = camera.world_to_screen(*center)
             p1 = camera.world_to_screen(*math3d.vadd(center, math3d.vscale(axis_dir, scale)))
             if p0 and p1:
-                d = math3d.seg_dist_2d(vx, vy, p0[0], p0[1], p1[0], p1[1])
+                d = math3d.seg_dist_2d(mx, my, p0[0], p0[1], p1[0], p1[1])
                 if d < best_d: best_d, best = d, name
         return best
 
@@ -185,7 +185,7 @@ class Gizmo:
         if not scene.selected_indices: return None
         center = scene.selection_center()
         scale  = self._gizmo_scale(center, camera)
-        vx, vy = mx - PANEL_WIDTH, my;  N = 48;  best, best_d = None, 10.0
+        N = 48;  best, best_d = None, 10.0
         for name, (axis_dir, _) in GIZMO_AXES.items():
             u, v = math3d.perp_basis(axis_dir);  prev = None
             for i in range(N+1):
@@ -194,7 +194,7 @@ class Gizmo:
                                                     math3d.vscale(v, scale*math.sin(a))))
                 sp = camera.world_to_screen(*p)
                 if sp and prev:
-                    d = math3d.seg_dist_2d(vx, vy, prev[0], prev[1], sp[0], sp[1])
+                    d = math3d.seg_dist_2d(mx, my, prev[0], prev[1], sp[0], sp[1])
                     if d < best_d: best_d, best = d, name
                 prev = sp if sp else None
         return best
@@ -204,11 +204,11 @@ class Gizmo:
         q = scene.polygons[scene.selected_idx]
         if len(q) != 4: return None
         handles = self._scale_handle_positions(q, camera)
-        vx, vy  = mx - PANEL_WIDTH, my;  best, best_d = None, 15.0
+        best, best_d = None, 15.0
         for name, pos in handles.items():
             sp = camera.world_to_screen(*pos)
             if sp:
-                d = math.hypot(vx - sp[0], vy - sp[1])
+                d = math.hypot(mx - sp[0], my - sp[1])
                 if d < best_d: best_d, best = d, name
         return best
 
@@ -264,7 +264,7 @@ class Gizmo:
             center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
                       sum(c[2] for c in cs)/len(cs)) if cs else (0.0, 0.0, 0.0)
         self.drag_axis_t0 = math3d.ray_line_closest_s(
-            tuple(camera.pos), camera.screen_ray(mx - PANEL_WIDTH, my),
+            tuple(camera.pos), camera.screen_ray(mx, my),
             center, GIZMO_AXES[axis][0])
 
     def _update_translate_drag(self, mx, my, scene, camera):
@@ -276,7 +276,7 @@ class Gizmo:
             center = (sum(v[0] for v in verts)/n, sum(v[1] for v in verts)/n,
                       sum(v[2] for v in verts)/n)
             t    = math3d.ray_line_closest_s(tuple(camera.pos),
-                                             camera.screen_ray(mx - PANEL_WIDTH, my),
+                                             camera.screen_ray(mx, my),
                                              center, axis_dir)
             move = math3d.vscale(axis_dir,
                                  round((t - self.drag_axis_t0) / self.translate_snap) * self.translate_snap)
@@ -292,7 +292,7 @@ class Gizmo:
             center = (sum(v[0] for v in verts)/n, sum(v[1] for v in verts)/n,
                       sum(v[2] for v in verts)/n)
             t    = math3d.ray_line_closest_s(tuple(camera.pos),
-                                             camera.screen_ray(mx - PANEL_WIDTH, my),
+                                             camera.screen_ray(mx, my),
                                              center, axis_dir)
             move = math3d.vscale(axis_dir,
                                  round((t - self.drag_axis_t0) / self.translate_snap) * self.translate_snap)
@@ -310,7 +310,7 @@ class Gizmo:
             center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
                       sum(c[2] for c in cs)/len(cs))
             t    = math3d.ray_line_closest_s(tuple(camera.pos),
-                                             camera.screen_ray(mx - PANEL_WIDTH, my),
+                                             camera.screen_ray(mx, my),
                                              center, axis_dir)
             move = math3d.vscale(axis_dir,
                                  round((t - self.drag_axis_t0) / self.translate_snap) * self.translate_snap)
@@ -328,7 +328,7 @@ class Gizmo:
         axis_dir          = GIZMO_AXES[axis][0]
         self.drag_plane_u, self.drag_plane_v = math3d.perp_basis(axis_dir)
         hit = math3d.ray_plane_intersect(tuple(camera.pos),
-                                         camera.screen_ray(mx - PANEL_WIDTH, my),
+                                         camera.screen_ray(mx, my),
                                          self.drag_center, axis_dir)
         self.drag_angle0 = (math3d.angle_on_plane(hit, self.drag_center,
                                                    self.drag_plane_u, self.drag_plane_v)
@@ -338,7 +338,7 @@ class Gizmo:
         if self.dragging_axis is None or not self.drag_start_verts_all: return
         axis_dir = GIZMO_AXES[self.dragging_axis][0]
         hit = math3d.ray_plane_intersect(tuple(camera.pos),
-                                         camera.screen_ray(mx - PANEL_WIDTH, my),
+                                         camera.screen_ray(mx, my),
                                          self.drag_center, axis_dir)
         if hit is None: return
         angle = math3d.angle_on_plane(hit, self.drag_center, self.drag_plane_u, self.drag_plane_v)
@@ -355,7 +355,7 @@ class Gizmo:
         self.drag_start_verts = list(scene.polygons[scene.selected_idx])
         (self.drag_center, self.drag_wa, self.drag_ha,
          self.drag_hw0, self.drag_hh0) = math3d.quad_decompose(self.drag_start_verts)
-        ray_o = tuple(camera.pos);  ray_d = camera.screen_ray(mx - PANEL_WIDTH, my)
+        ray_o = tuple(camera.pos);  ray_d = camera.screen_ray(mx, my)
         if handle == 'width':
             self.drag_axis_t0 = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, self.drag_wa)
         elif handle == 'height':
@@ -366,7 +366,7 @@ class Gizmo:
 
     def _update_scale_drag(self, mx, my, scene, camera):
         if self.dragging_axis is None or self.drag_start_verts is None: return
-        ray_o = tuple(camera.pos);  ray_d = camera.screen_ray(mx - PANEL_WIDTH, my)
+        ray_o = tuple(camera.pos);  ray_d = camera.screen_ray(mx, my)
         snap  = lambda x: max(self.scale_snap, round(x / self.scale_snap) * self.scale_snap)
         if self.dragging_axis == 'width':
             t = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, self.drag_wa)

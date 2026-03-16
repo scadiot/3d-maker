@@ -3,7 +3,8 @@
 import copy
 import json
 import math
-import pygame
+import tkinter as tk
+from PIL import Image, ImageTk
 from OpenGL.GL import (
     glGenTextures, glBindTexture, glTexImage2D, glTexParameteri,
     glEnable, glDisable, glCullFace, glFrontFace, glBegin, glEnd,
@@ -46,10 +47,10 @@ class Scene:
             self.atlas_data = json.load(f)
 
     def load_texture(self, path):
-        """Charge une texture PNG dans OpenGL. À appeler après pygame.display.set_mode."""
-        surf = pygame.image.load(path).convert_alpha()
-        w, h = surf.get_size()
-        data = pygame.image.tobytes(surf, "RGBA", True)
+        """Charge une texture PNG dans OpenGL via PIL."""
+        img = Image.open(path).convert("RGBA").transpose(Image.FLIP_TOP_BOTTOM)
+        w, h = img.size
+        data = img.tobytes()
         tex = glGenTextures(1);  glBindTexture(GL_TEXTURE_2D, tex)
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
@@ -322,17 +323,27 @@ class Scene:
         self.poly_uvs.append(quad_uvs[:len(unique)])
 
     # ── Aperçu texture ────────────────────────────────────────────────────────
-    def open_tex_preview(self):
+    def open_tex_preview(self, root_tk):
         if self.tex_preview_win:
             return
-        img = pygame.image.load(TEXTURE_PATH)
-        self.tex_preview_sz = min(img.get_width(), PREVIEW_MAX_SZ)
-        if img.get_width() != self.tex_preview_sz:
-            img = pygame.transform.smoothscale(img, (self.tex_preview_sz, self.tex_preview_sz))
-        self.tex_preview_win = pygame.Window("Aperçu texture",
-                                             size=(self.tex_preview_sz, self.tex_preview_sz))
-        self.tex_preview_win.get_surface().blit(img, (0, 0))
-        self.tex_preview_win.flip()
+        img = Image.open(TEXTURE_PATH)
+        sz = min(img.width, PREVIEW_MAX_SZ)
+        self.tex_preview_sz = sz
+        img = img.resize((sz, sz), Image.LANCZOS)
+
+        self.tex_preview_win = tk.Toplevel(root_tk)
+        self.tex_preview_win.title("Aperçu texture")
+        self.tex_preview_win.resizable(False, False)
+        self.tex_preview_win.protocol("WM_DELETE_WINDOW", self.close_tex_preview)
+
+        photo = ImageTk.PhotoImage(img)
+        label = tk.Label(self.tex_preview_win, image=photo)
+        label._photo = photo  # empêche le garbage collection
+        label.pack()
+        label.bind('<Button-1>', lambda e: (
+            self.assign_uv_from_atlas_click((e.x, e.y)),
+            self.close_tex_preview(),
+        ))
 
     def close_tex_preview(self):
         if self.tex_preview_win:

@@ -1,7 +1,6 @@
 """Classe Camera : état et helpers de projection/rayon."""
 
 import math
-from pygame.locals import K_z, K_q, K_s, K_d
 
 from editor.constants import VIEW_WIDTH, HEIGHT, FOV, MOVE_SPEED, MOUSE_SENSITIVITY
 from editor import math3d
@@ -36,7 +35,7 @@ class Camera:
         return ((cx3/(-cz3*aspect*t)+1)/2*VIEW_WIDTH, (1 - cy3/(-cz3*t))/2*HEIGHT)
 
     def screen_ray(self, vx, vy):
-        """Rayon depuis un pixel viewport (vx = mx - PANEL_WIDTH). Retourne la direction normalisée."""
+        """Rayon depuis un pixel viewport. Retourne la direction normalisée."""
         aspect = VIEW_WIDTH / HEIGHT;  t = math.tan(math.radians(FOV / 2))
         rcx = ((2*vx/VIEW_WIDTH) - 1) * aspect * t
         rcy = (1 - (2*vy/HEIGHT)) * t;  rcz = -1.0
@@ -48,12 +47,13 @@ class Camera:
 
     # ── Entrées ───────────────────────────────────────────────────────────────
     def apply_movement(self, keys, dt):
+        """keys : ensemble de keysyms Tkinter en minuscules (ex : {'z', 'd'})."""
         speed = MOVE_SPEED * dt
         fwd, rgt = self.forward_xz(), self.right_xz()
-        if keys[K_z]: self.pos[0] -= fwd[0]*speed; self.pos[1] += fwd[1]*speed; self.pos[2] -= fwd[2]*speed
-        if keys[K_s]: self.pos[0] += fwd[0]*speed; self.pos[1] -= fwd[1]*speed; self.pos[2] += fwd[2]*speed
-        if keys[K_q]: self.pos[0] -= rgt[0]*speed; self.pos[2] -= rgt[2]*speed
-        if keys[K_d]: self.pos[0] += rgt[0]*speed; self.pos[2] += rgt[2]*speed
+        if 'z' in keys: self.pos[0] -= fwd[0]*speed; self.pos[1] += fwd[1]*speed; self.pos[2] -= fwd[2]*speed
+        if 's' in keys: self.pos[0] += fwd[0]*speed; self.pos[1] -= fwd[1]*speed; self.pos[2] += fwd[2]*speed
+        if 'q' in keys: self.pos[0] -= rgt[0]*speed; self.pos[2] -= rgt[2]*speed
+        if 'd' in keys: self.pos[0] += rgt[0]*speed; self.pos[2] += rgt[2]*speed
 
     def apply_mouse_look(self, dx, dy):
         self.yaw   = (self.yaw   - dx * MOUSE_SENSITIVITY) % 360.0
