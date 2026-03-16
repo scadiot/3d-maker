@@ -71,7 +71,7 @@ class App:
     def run(self):
         self.root = tk.Tk()
         self.root.title("3D Viewer")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.sel_mode_var = tk.StringVar(value='Polygon')
@@ -450,7 +450,7 @@ class App:
     def _build_viewport(self):
         vw = _TOTAL_CONTENT_WIDTH - self.panel_width - _SEP_WIDTH
         self.viewport = Viewport3D(self.root, self, width=vw, height=HEIGHT)
-        self.viewport.pack(side=tk.LEFT)
+        self.viewport.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     def _on_sep_press(self, event):
         self._resizing       = True
@@ -467,7 +467,7 @@ class App:
         dx = event.x_root - self._resize_start_x
         new_pw = max(_PANEL_MIN_WIDTH, min(_PANEL_MAX_WIDTH,
                                            self._resize_start_pw + dx))
-        new_vw = _TOTAL_CONTENT_WIDTH - new_pw - _SEP_WIDTH
+        new_vw = self.root.winfo_width() - new_pw - _SEP_WIDTH
         if new_vw < 200:
             return
         self.panel_width = new_pw
@@ -737,6 +737,7 @@ class App:
     def _render(self):
         vw = self.viewport.winfo_width() or self.camera.vw
         vh = self.viewport.winfo_height() or self.camera.vh
+        self.camera.vw, self.camera.vh = vw, vh
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glViewport(0, 0, vw, vh)
         glMatrixMode(GL_PROJECTION); glLoadIdentity()
