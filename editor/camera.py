@@ -11,6 +11,8 @@ class Camera:
         self.pos   = [0.0, 3.0, 8.0]
         self.yaw   = 0.0
         self.pitch = -20.0
+        self.vw    = VIEW_WIDTH
+        self.vh    = HEIGHT
 
     # ── Directions ────────────────────────────────────────────────────────────
     def forward_xz(self):
@@ -31,14 +33,14 @@ class Camera:
         pr = math.radians(self.pitch);  cp, sp = math.cos(pr), math.sin(pr)
         cx3 = cx2;  cy3 = cy2*cp + cz2*sp;  cz3 = -cy2*sp + cz2*cp
         if cz3 >= -1e-4: return None
-        aspect = VIEW_WIDTH / HEIGHT;  t = math.tan(math.radians(FOV / 2))
-        return ((cx3/(-cz3*aspect*t)+1)/2*VIEW_WIDTH, (1 - cy3/(-cz3*t))/2*HEIGHT)
+        aspect = self.vw / self.vh;  t = math.tan(math.radians(FOV / 2))
+        return ((cx3/(-cz3*aspect*t)+1)/2*self.vw, (1 - cy3/(-cz3*t))/2*self.vh)
 
     def screen_ray(self, vx, vy):
         """Rayon depuis un pixel viewport. Retourne la direction normalisée."""
-        aspect = VIEW_WIDTH / HEIGHT;  t = math.tan(math.radians(FOV / 2))
-        rcx = ((2*vx/VIEW_WIDTH) - 1) * aspect * t
-        rcy = (1 - (2*vy/HEIGHT)) * t;  rcz = -1.0
+        aspect = self.vw / self.vh;  t = math.tan(math.radians(FOV / 2))
+        rcx = ((2*vx/self.vw) - 1) * aspect * t
+        rcy = (1 - (2*vy/self.vh)) * t;  rcz = -1.0
         rcx, rcy, rcz = math3d.normalize((rcx, rcy, rcz))
         pr = math.radians(self.pitch);  cp, sp = math.cos(pr), math.sin(pr)
         rx1 = rcx;  ry1 = rcy*cp - rcz*sp;  rz1 = rcy*sp + rcz*cp

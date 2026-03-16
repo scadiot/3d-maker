@@ -19,6 +19,11 @@ from OpenGL.GLU import gluPerspective
 from editor.constants import (PANEL_WIDTH, VIEW_WIDTH, HEIGHT,
                                FOV, NEAR, FAR, ATLAS_JSON, TEXTURE_PATH)
 
+_SEP_WIDTH           = 5
+_PANEL_MIN_WIDTH     = 100
+_PANEL_MAX_WIDTH     = 700
+_TOTAL_CONTENT_WIDTH = PANEL_WIDTH + VIEW_WIDTH
+
 SNAP_VALUES = ["1", "0.5", "0.25", "0.1", "0.05", "0.01"]
 from editor.camera       import Camera
 from editor.scene        import Scene
@@ -49,9 +54,13 @@ class App:
         self.scene          = Scene()
         self.gizmo          = Gizmo()
         self.selection_mode = 'polygon'
+        self.panel_width    = PANEL_WIDTH
         self.panning        = False
         self.pan_last_x     = 0
         self.pan_last_y     = 0
+        self._resizing      = False
+        self._resize_start_x = 0
+        self._resize_start_pw = PANEL_WIDTH
         self.keys_pressed   = set()
         self.mouse_btn1     = False
         self.mouse_x        = 0
@@ -70,6 +79,7 @@ class App:
         self._build_toolbar()
         self._build_toolbar2()
         self._build_panel()
+        self._build_resize_bar()
         self._build_viewport()
         self._bind_events()
 
@@ -419,16 +429,51 @@ class App:
 
     # ── Construction de l'interface ───────────────────────────────────────────
     def _build_panel(self):
-        self.panel = tk.Frame(self.root, width=PANEL_WIDTH, bg='#1a1a21')
+        self.panel = tk.Frame(self.root, width=self.panel_width, bg='#1a1a21')
         self.panel.pack(side=tk.LEFT, fill=tk.Y)
         self.panel.pack_propagate(False)
 
         self.uv_selector = UVSelector(self.panel, self.scene)
         self.uv_selector.pack(fill=tk.BOTH, expand=True)
 
+    def _build_resize_bar(self):
+        self._sep = tk.Frame(self.root, width=_SEP_WIDTH, bg='#2a2a3a',
+                             cursor='sb_h_double_arrow')
+        self._sep.pack(side=tk.LEFT, fill=tk.Y)
+        self._sep.bind('<ButtonPress-1>',   self._on_sep_press)
+        self._sep.bind('<ButtonRelease-1>', self._on_sep_release)
+        self._sep.bind('<Motion>',          self._on_sep_motion)
+        self._sep.bind('<Enter>', lambda _: self._sep.config(bg='#3e3e5a'))
+        self._sep.bind('<Leave>', lambda _: self._sep.config(bg='#2a2a3a'
+                                            if not self._resizing else '#3e3e5a'))
+
     def _build_viewport(self):
-        self.viewport = Viewport3D(self.root, self, width=VIEW_WIDTH, height=HEIGHT)
+        vw = _TOTAL_CONTENT_WIDTH - self.panel_width - _SEP_WIDTH
+        self.viewport = Viewport3D(self.root, self, width=vw, height=HEIGHT)
         self.viewport.pack(side=tk.LEFT)
+
+    def _on_sep_press(self, event):
+        self._resizing       = True
+        self._resize_start_x  = event.x_root
+        self._resize_start_pw = self.panel_width
+
+    def _on_sep_release(self, _):
+        self._resizing = False
+        self._sep.config(bg='#2a2a3a')
+
+    def _on_sep_motion(self, event):
+        if not self._resizing:
+            return
+        dx = event.x_root - self._resize_start_x
+        new_pw = max(_PANEL_MIN_WIDTH, min(_PANEL_MAX_WIDTH,
+                                           self._resize_start_pw + dx))
+        new_vw = _TOTAL_CONTENT_WIDTH - new_pw - _SEP_WIDTH
+        if new_vw < 200:
+            return
+        self.panel_width = new_pw
+        self.panel.config(width=new_pw)
+        self.viewport.config(width=new_vw)
+        self.camera.vw = new_vw
 
     # ── Bindings ──────────────────────────────────────────────────────────────
     def _bind_events(self):
@@ -471,8 +516,8 @@ class App:
             dy = event.y_root - self.pan_last_y
             if dx or dy:
                 self.camera.apply_mouse_look(dx, dy)
-                cx = self.viewport.winfo_rootx() + VIEW_WIDTH // 2
-                cy = self.viewport.winfo_rooty() + HEIGHT // 2
+                cx = self.viewport.winfo_rootx() + self.viewport.winfo_width() // 2
+                cy = self.viewport.winfo_rooty() + self.viewport.winfo_height() // 2
                 ctypes.windll.user32.SetCursorPos(cx, cy)
                 self.pan_last_x = cx
                 self.pan_last_y = cy
@@ -690,10 +735,12 @@ class App:
 
     # ── Rendu ─────────────────────────────────────────────────────────────────
     def _render(self):
+        vw = self.viewport.winfo_width() or self.camera.vw
+        vh = self.viewport.winfo_height() or self.camera.vh
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glViewport(0, 0, VIEW_WIDTH, HEIGHT)
+        glViewport(0, 0, vw, vh)
         glMatrixMode(GL_PROJECTION); glLoadIdentity()
-        gluPerspective(FOV, VIEW_WIDTH / HEIGHT, NEAR, FAR)
+        gluPerspective(FOV, vw / vh, NEAR, FAR)
         glMatrixMode(GL_MODELVIEW);  glLoadIdentity()
         glRotatef(-self.camera.pitch, 1, 0, 0)
         glRotatef(-self.camera.yaw,   0, 1, 0)
