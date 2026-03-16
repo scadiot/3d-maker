@@ -67,6 +67,7 @@ class App:
         self.sel_mode_var = tk.StringVar(value='Polygon')
         self._build_menu()
         self._build_toolbar()
+        self._build_toolbar2()
         self._build_panel()
         self._build_viewport()
         self._bind_events()
@@ -329,7 +330,7 @@ class App:
         for mode, ifn, lbl in [('polygon', ico_sel_polygon, "Polygon"),
                                 ('edge',    ico_sel_edge,    "Arête"),
                                 ('vertex',  ico_sel_vertex,  "Vertex")]:
-            b = add_btn(make_icon(ifn), lambda m=mode: set_sel_mode(m), lbl, "P")
+            b = add_btn(make_icon(ifn), lambda m=mode: set_sel_mode(m), lbl, "E")
             self._sel_btns[mode] = (b, BG, BG_ON)
 
         self._sync_sel_mode_btns()
@@ -350,6 +351,115 @@ class App:
                                  activebackground='#2d4080',
                                  activeforeground='#c8c8d8')
         snap_menu.pack(side=tk.LEFT, padx=2, pady=4)
+
+    # ── Deuxième barre d'outils ───────────────────────────────────────────────
+    def _build_toolbar2(self):
+        BG      = '#16161f'
+        BG_ACT  = '#2a2a3a'
+        IC      = '#c8c8d8'
+        SZ      = 22
+        BTN_SZ  = 34
+
+        self.toolbar2 = tk.Frame(self.root, bg=BG, height=BTN_SZ + 4)
+        self.toolbar2.pack(side=tk.TOP, fill=tk.X)
+        self.toolbar2.pack_propagate(False)
+
+        def make_icon(draw_fn):
+            img = Image.new('RGBA', (SZ, SZ), (0, 0, 0, 0))
+            draw_fn(ImageDraw.Draw(img), SZ, IC)
+            ph = ImageTk.PhotoImage(img)
+            self._icons.append(ph)
+            return ph
+
+        def add_btn(icon, cmd, label='', shortcut=''):
+            btn = tk.Button(
+                self.toolbar2, image=icon, command=cmd,
+                bg=BG, activebackground=BG_ACT,
+                relief='flat', bd=0,
+                width=BTN_SZ, height=BTN_SZ,
+                cursor='hand2',
+            )
+            btn.pack(side=tk.LEFT, padx=1, pady=2)
+
+            tip_text = f"{label} [{shortcut}]" if shortcut else label
+            tip_win  = [None]
+
+            def show_tip(_e):
+                if tip_win[0] or not tip_text:
+                    return
+                x = btn.winfo_rootx() + BTN_SZ // 2
+                y = btn.winfo_rooty() + BTN_SZ + 6
+                w = tk.Toplevel(self.root)
+                w.wm_overrideredirect(True)
+                w.wm_geometry(f"+{x}+{y}")
+                tk.Label(w, text=tip_text, bg='#2a2a3a', fg='#c8c8d8',
+                         font=('Segoe UI', 8), relief='flat', bd=1,
+                         padx=6, pady=3).pack()
+                tip_win[0] = w
+
+            def hide_tip(_e):
+                if tip_win[0]:
+                    tip_win[0].destroy()
+                    tip_win[0] = None
+
+            btn.bind('<Enter>', show_tip)
+            btn.bind('<Leave>', hide_tip)
+            btn.bind('<ButtonPress>', hide_tip)
+            btn.bind('<Enter>', lambda _e, b=btn: b.config(bg=BG_ACT), add='+')
+            btn.bind('<Leave>', lambda _e, b=btn: b.config(bg=BG), add='+')
+            return btn
+
+        def add_sep():
+            tk.Frame(self.toolbar2, width=1, bg='#38384a').pack(
+                side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
+
+        # ── Icônes ────────────────────────────────────────────────────────────
+        def ico_flip(d, s, c):
+            cx = s // 2
+            d.line([cx, 3, cx, s-3], fill=c, width=2)
+            pts_l = [3, s//2, cx-2, 4, cx-2, s-4]
+            d.polygon(pts_l, outline=c)
+            pts_r = [s-3, s//2, cx+2, s-4, cx+2, 4]
+            d.polygon(pts_r, fill=c)
+
+        def ico_rotate_uv(d, s, c):
+            r = s//2 - 3
+            cx, cy = s//2, s//2
+            d.arc([cx-r, cy-r, cx+r, cy+r], start=60, end=330, fill=c, width=1)
+            ax = cx + r * math.cos(math.radians(60))
+            ay = cy + r * math.sin(math.radians(60))
+            d.polygon([ax, ay, ax+4, ay-1, ax+1, ay+4], fill=c)
+            d.rectangle([cx-3, cy-3, cx+3, cy+3], outline=c, width=1)
+
+        def ico_rapprocher(d, s, c):
+            m = s // 2
+            d.line([3, m-4, s-3, m-4], fill=c, width=1)
+            d.line([3, m+4, s-3, m+4], fill=c, width=1)
+            d.line([m, m-4, m, m+4],   fill=c, width=2)
+            d.polygon([m, m-1, m-3, m-5, m+3, m-5], fill=c)
+            d.polygon([m, m+1, m-3, m+5, m+3, m+5], fill=c)
+
+        def ico_create_from_edges(d, s, c):
+            pts = [s//2, 3, s-3, s-3, 3, s-3]
+            d.polygon(pts, outline=c, width=2)
+            r = 3
+            for px, py in [(s//2, 3), (s-3, s-3), (3, s-3)]:
+                d.ellipse([px-r, py-r, px+r, py+r], fill=c)
+
+        # ── Placement ─────────────────────────────────────────────────────────
+        add_btn(make_icon(ico_flip),
+                self.scene.flip_orientation,
+                "Inverser orientation", "N")
+        add_btn(make_icon(ico_rotate_uv),
+                self.scene.rotate_uvs,
+                "Rotation UVs", "R")
+        add_sep()
+        add_btn(make_icon(ico_rapprocher),
+                self.scene.rapprocher_edges,
+                "Rapprocher arêtes")
+        add_btn(make_icon(ico_create_from_edges),
+                self.scene.create_polygon_from_edges,
+                "Créer polygon depuis arêtes")
 
     def _on_snap_change(self, *_):
         v = float(self._snap_var.get())
@@ -381,6 +491,7 @@ class App:
         self.viewport.bind('<Button-2>',        self._on_middle_down)
         self.viewport.bind('<ButtonRelease-2>', self._on_middle_up)
         self.viewport.bind('<Motion>',          self._on_mouse_motion)
+        self.viewport.bind('<MouseWheel>',      self._on_mouse_wheel)
         self.root.bind('<KeyPress>',            self._on_key_press)
         self.root.bind('<KeyRelease>',          self._on_key_release)
 
@@ -393,6 +504,9 @@ class App:
     def _on_mouse_up(self, event):
         self.mouse_btn1 = False
         self.gizmo.stop_drag()
+
+    def _on_mouse_wheel(self, event):
+        self.camera.apply_scroll(event.delta / 120)
 
     def _on_middle_down(self, event):
         self.panning = True
@@ -466,7 +580,7 @@ class App:
         if key == 'n' and self.scene.selected_indices:
             self.scene.flip_orientation()
 
-        if key == 'p':
+        if key == 'e':
             modes = ['polygon', 'edge', 'vertex']
             next_mode = modes[(modes.index(self.selection_mode) + 1) % len(modes)]
             self.sel_mode_var.set({'polygon': 'Polygon', 'edge': 'Arête', 'vertex': 'Vertex'}[next_mode])
@@ -484,7 +598,7 @@ class App:
             self._on_close()
 
     def _handle_mouse_down_3d(self, mx, my):
-        ctrl_held = bool(self.keys_pressed & {'control_l', 'control_r'})
+        ctrl_held = 'shift_l' in self.keys_pressed
         multi     = len(self.scene.selected_indices) > 1
 
         if self.selection_mode == 'edge' and self.scene.selected_edges:

@@ -58,3 +58,11 @@ class Camera:
     def apply_mouse_look(self, dx, dy):
         self.yaw   = (self.yaw   - dx * MOUSE_SENSITIVITY) % 360.0
         self.pitch = max(-89.0, min(89.0, self.pitch - dy * MOUSE_SENSITIVITY))
+
+    def apply_scroll(self, delta):
+        """Avance/recule la caméra selon le défilement de la molette."""
+        fwd = self.forward_xz()
+        speed = MOVE_SPEED * 0.1 * delta
+        self.pos[0] -= fwd[0] * speed
+        self.pos[1] += fwd[1] * speed
+        self.pos[2] -= fwd[2] * speed
