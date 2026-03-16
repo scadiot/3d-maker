@@ -4,7 +4,7 @@ import math
 import time
 import ctypes
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import filedialog
 from PIL import Image, ImageDraw, ImageTk
 
 from pyopengltk import OpenGLFrame
@@ -62,6 +62,7 @@ class App:
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        self.sel_mode_var = tk.StringVar(value='Polygon')
         self._build_menu()
         self._build_toolbar()
         self._build_panel()
@@ -151,8 +152,8 @@ class App:
             self._icons.append(ph)
             return ph
 
-        # ── Fabrique de bouton ────────────────────────────────────────────────
-        def add_btn(icon, cmd):
+        # ── Fabrique de bouton avec tooltip au survol ─────────────────────────
+        def add_btn(icon, cmd, label='', shortcut=''):
             btn = tk.Button(
                 self.toolbar, image=icon, command=cmd,
                 bg=BG, activebackground=BG_ACT,
@@ -161,8 +162,33 @@ class App:
                 cursor='hand2',
             )
             btn.pack(side=tk.LEFT, padx=1, pady=2)
-            btn.bind('<Enter>', lambda e, b=btn: b.config(bg=BG_ACT) if b['bg'] != BG_ON else None)
-            btn.bind('<Leave>', lambda e, b=btn: b.config(bg=BG) if b['bg'] == BG_ACT else None)
+
+            tip_text = f"{label} [{shortcut}]" if shortcut else label
+            tip_win  = [None]
+
+            def show_tip(_e):
+                if tip_win[0] or not tip_text:
+                    return
+                x = btn.winfo_rootx() + BTN_SZ // 2
+                y = btn.winfo_rooty() + BTN_SZ + 6
+                w = tk.Toplevel(self.root)
+                w.wm_overrideredirect(True)
+                w.wm_geometry(f"+{x}+{y}")
+                tk.Label(w, text=tip_text, bg='#2a2a3a', fg='#c8c8d8',
+                         font=('Segoe UI', 8), relief='flat', bd=1,
+                         padx=6, pady=3).pack()
+                tip_win[0] = w
+
+            def hide_tip(_e):
+                if tip_win[0]:
+                    tip_win[0].destroy()
+                    tip_win[0] = None
+
+            btn.bind('<Enter>', show_tip)
+            btn.bind('<Leave>', hide_tip)
+            btn.bind('<ButtonPress>', hide_tip)
+            btn.bind('<Enter>', lambda _e, b=btn: b.config(bg=BG_ACT) if b['bg'] != BG_ON else None, add='+')
+            btn.bind('<Leave>', lambda _e, b=btn: b.config(bg=BG) if b['bg'] == BG_ACT else None, add='+')
             return btn
 
         def add_sep():
@@ -263,19 +289,20 @@ class App:
             d.ellipse([cx-r, cy-r, cx+r, cy+r], fill=c)
 
         # ── Placement ─────────────────────────────────────────────────────────
-        add_btn(make_icon(ico_save),      self._save_json_dialog)
-        add_btn(make_icon(ico_load),      self._load_json_dialog)
+        add_btn(make_icon(ico_save),      self._save_json_dialog,  "Enregistrer")
+        add_btn(make_icon(ico_load),      self._load_json_dialog,  "Charger")
         add_sep()
-        add_btn(make_icon(ico_polygon),   lambda: self.scene.add_polygon(self.camera.pos, self.camera.yaw))
-        add_btn(make_icon(ico_triangle),  lambda: self.scene.add_triangle(self.camera.pos, self.camera.yaw))
+        add_btn(make_icon(ico_polygon),   lambda: self.scene.add_polygon(self.camera.pos, self.camera.yaw),  "Polygon")
+        add_btn(make_icon(ico_triangle),  lambda: self.scene.add_triangle(self.camera.pos, self.camera.yaw), "Triangle")
         add_sep()
-        add_btn(make_icon(ico_duplicate), self.scene.duplicate_selected)
+        add_btn(make_icon(ico_duplicate), self.scene.duplicate_selected, "Dupliquer", "C")
         add_btn(make_icon(ico_delete),
                 lambda: (self.scene.delete_selected(), self.gizmo.stop_drag())
-                if self.scene.selected_indices else None)
+                if self.scene.selected_indices else None,
+                "Supprimer", "Suppr")
         add_sep()
-        add_btn(make_icon(ico_group),     self.scene.group_selected)
-        add_btn(make_icon(ico_ungroup),   self.scene.ungroup_selected)
+        add_btn(make_icon(ico_group),   self.scene.group_selected,   "Grouper",   "G")
+        add_btn(make_icon(ico_ungroup), self.scene.ungroup_selected, "Dégrouper", "H")
         add_sep()
 
         # Boutons gizmo (radio-style) — mis en valeur selon self.gizmo.mode
@@ -283,10 +310,10 @@ class App:
             self.gizmo.mode = mode
             self._sync_gizmo_btns()
 
-        for mode, ifn in [('translate', ico_translate),
-                           ('rotate',    ico_rotate),
-                           ('scale',     ico_scale)]:
-            b = add_btn(make_icon(ifn), lambda m=mode: set_gizmo(m))
+        for mode, ifn, lbl in [('translate', ico_translate, "Translater"),
+                                ('rotate',    ico_rotate,    "Rotation"),
+                                ('scale',     ico_scale,     "Échelle")]:
+            b = add_btn(make_icon(ifn), lambda m=mode: set_gizmo(m), lbl, "Espace")
             self._gizmo_btns[mode] = (b, BG, BG_ON)
 
         self._sync_gizmo_btns()
@@ -297,10 +324,10 @@ class App:
             self.sel_mode_var.set({'polygon': 'Polygon', 'edge': 'Arête', 'vertex': 'Vertex'}[mode])
             self._on_selection_mode_change()
 
-        for mode, ifn in [('polygon', ico_sel_polygon),
-                           ('edge',    ico_sel_edge),
-                           ('vertex',  ico_sel_vertex)]:
-            b = add_btn(make_icon(ifn), lambda m=mode: set_sel_mode(m))
+        for mode, ifn, lbl in [('polygon', ico_sel_polygon, "Polygon"),
+                                ('edge',    ico_sel_edge,    "Arête"),
+                                ('vertex',  ico_sel_vertex,  "Vertex")]:
+            b = add_btn(make_icon(ifn), lambda m=mode: set_sel_mode(m), lbl, "P")
             self._sel_btns[mode] = (b, BG, BG_ON)
 
         self._sync_sel_mode_btns()
@@ -318,60 +345,6 @@ class App:
         self.panel = tk.Frame(self.root, width=PANEL_WIDTH, bg='#1a1a21')
         self.panel.pack(side=tk.LEFT, fill=tk.Y)
         self.panel.pack_propagate(False)
-
-        pad = {'padx': 15, 'pady': (8, 0), 'fill': tk.X}
-
-        ttk.Button(self.panel, text="Ajouter polygon",
-                   command=lambda: self.scene.add_polygon(self.camera.pos, self.camera.yaw)
-                   ).pack(**pad)
-        ttk.Button(self.panel, text="Ajouter triangle",
-                   command=lambda: self.scene.add_triangle(self.camera.pos, self.camera.yaw)
-                   ).pack(**pad)
-
-        tk.Label(self.panel, text="Snap translation", bg='#1a1a21', fg='#cccccc',
-                 anchor='w').pack(padx=15, pady=(8, 0), fill=tk.X)
-        self.snap_var = tk.StringVar(value=str(self.gizmo.translate_snap))
-        self.dropdown_snap = ttk.Combobox(self.panel, textvariable=self.snap_var,
-                                          values=['1', '0.5', '0.25', '0.1', '0.05'],
-                                          state='readonly')
-        self.dropdown_snap.pack(padx=15, fill=tk.X)
-        self.dropdown_snap.bind('<<ComboboxSelected>>',
-                                lambda e: setattr(self.gizmo, 'translate_snap',
-                                                  float(self.snap_var.get())))
-
-        tk.Label(self.panel, text="Snap scale", bg='#1a1a21', fg='#cccccc',
-                 anchor='w').pack(padx=15, pady=(8, 0), fill=tk.X)
-        self.scale_snap_var = tk.StringVar(value=str(self.gizmo.scale_snap))
-        self.dropdown_scale_snap = ttk.Combobox(self.panel, textvariable=self.scale_snap_var,
-                                                values=['1', '0.5', '0.25', '0.1', '0.05'],
-                                                state='readonly')
-        self.dropdown_scale_snap.pack(padx=15, fill=tk.X)
-        self.dropdown_scale_snap.bind('<<ComboboxSelected>>',
-                                      lambda e: setattr(self.gizmo, 'scale_snap',
-                                                        float(self.scale_snap_var.get())))
-
-        ttk.Button(self.panel, text="Enregistrer JSON",
-                   command=self._save_json_dialog).pack(**pad)
-        ttk.Button(self.panel, text="Charger JSON",
-                   command=self._load_json_dialog).pack(**pad)
-
-        tk.Label(self.panel, text="Mode sélection", bg='#1a1a21', fg='#cccccc',
-                 anchor='w').pack(padx=15, pady=(8, 0), fill=tk.X)
-        self.sel_mode_var = tk.StringVar(value='Polygon')
-        self.dropdown_sel = ttk.Combobox(self.panel, textvariable=self.sel_mode_var,
-                                         values=['Polygon', 'Arête', 'Vertex'],
-                                         state='readonly')
-        self.dropdown_sel.pack(padx=15, fill=tk.X)
-        self.dropdown_sel.bind('<<ComboboxSelected>>', self._on_selection_mode_change)
-
-        self.btn_rapprocher = ttk.Button(self.panel, text="Rapprocher",
-                                         command=self.scene.rapprocher_edges, state='disabled')
-        self.btn_rapprocher.pack(**pad)
-
-        self.btn_create_polygon = ttk.Button(self.panel, text="Créer polygon",
-                                              command=self.scene.create_polygon_from_edges,
-                                              state='disabled')
-        self.btn_create_polygon.pack(**pad)
 
     def _build_viewport(self):
         self.viewport = Viewport3D(self.root, self, width=VIEW_WIDTH, height=HEIGHT)
@@ -468,6 +441,12 @@ class App:
 
         if key == 'n' and self.scene.selected_indices:
             self.scene.flip_orientation()
+
+        if key == 'p':
+            modes = ['polygon', 'edge', 'vertex']
+            next_mode = modes[(modes.index(self.selection_mode) + 1) % len(modes)]
+            self.sel_mode_var.set({'polygon': 'Polygon', 'edge': 'Arête', 'vertex': 'Vertex'}[next_mode])
+            self._on_selection_mode_change()
 
         if key == 'escape':
             self._on_close()
@@ -608,12 +587,6 @@ class App:
         now = time.time()
         dt  = now - self.last_time
         self.last_time = now
-
-        edges    = self.scene.selected_edges_ordered
-        two_diff = len(edges) == 2 and edges[0][0] != edges[1][0]
-        state    = 'normal' if two_diff else 'disabled'
-        self.btn_rapprocher.config(state=state)
-        self.btn_create_polygon.config(state=state)
 
         if self.gizmo.dragging_axis and self.mouse_btn1:
             self.gizmo.update_drag(self.mouse_x, self.mouse_y, self.scene, self.camera)
