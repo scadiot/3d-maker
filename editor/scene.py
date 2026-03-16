@@ -350,11 +350,9 @@ class Scene:
             self.tex_preview_win.destroy()
             self.tex_preview_win = None
 
-    def assign_uv_from_atlas_click(self, event_pos):
-        """Applique les UVs de l'atlas au polygon sélectionné selon le clic dans l'aperçu."""
-        px = int(event_pos[0] * self.atlas_w / self.tex_preview_sz)
-        py = int(event_pos[1] * self.atlas_h / self.tex_preview_sz)
-        entry = next((e for e in self.atlas_data["images"]
+    def assign_uv_at_atlas_pixel(self, px, py):
+        """Applique les UVs de l'atlas au polygon sélectionné à partir de coordonnées atlas brutes."""
+        entry = next((e for e in self.atlas_data.get("images", [])
                       if e["x"] <= px < e["x"]+e["width"]
                       and e["y"] <= py < e["y"]+e["height"]), None)
         if entry and self.selected_indices:
@@ -367,6 +365,12 @@ class Scene:
             for idx in self.selected_indices:
                 n = len(self.polygons[idx])
                 self.poly_uvs[idx] = [corners[i % 4] for i in range(n)]
+
+    def assign_uv_from_atlas_click(self, event_pos):
+        """Applique les UVs de l'atlas au polygon sélectionné selon le clic dans l'aperçu."""
+        px = int(event_pos[0] * self.atlas_w / self.tex_preview_sz)
+        py = int(event_pos[1] * self.atlas_h / self.tex_preview_sz)
+        self.assign_uv_at_atlas_pixel(px, py)
 
     # ── Rendu ─────────────────────────────────────────────────────────────────
     def draw(self):

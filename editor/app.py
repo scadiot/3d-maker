@@ -20,10 +20,11 @@ from editor.constants import (PANEL_WIDTH, VIEW_WIDTH, HEIGHT,
                                FOV, NEAR, FAR, ATLAS_JSON, TEXTURE_PATH)
 
 SNAP_VALUES = ["1", "0.5", "0.25", "0.1", "0.05", "0.01"]
-from editor.camera   import Camera
-from editor.scene    import Scene
-from editor.gizmo    import Gizmo
-from editor.renderer import draw_grid
+from editor.camera       import Camera
+from editor.scene        import Scene
+from editor.gizmo        import Gizmo
+from editor.renderer     import draw_grid
+from editor.uv_selector  import UVSelector
 
 
 class Viewport3D(OpenGLFrame):
@@ -421,6 +422,9 @@ class App:
         self.panel = tk.Frame(self.root, width=PANEL_WIDTH, bg='#1a1a21')
         self.panel.pack(side=tk.LEFT, fill=tk.Y)
         self.panel.pack_propagate(False)
+
+        self.uv_selector = UVSelector(self.panel, self.scene)
+        self.uv_selector.pack(fill=tk.BOTH, expand=True)
 
     def _build_viewport(self):
         self.viewport = Viewport3D(self.root, self, width=VIEW_WIDTH, height=HEIGHT)
