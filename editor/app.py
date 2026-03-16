@@ -433,8 +433,62 @@ class App:
         self.panel.pack(side=tk.LEFT, fill=tk.Y)
         self.panel.pack_propagate(False)
 
-        self.uv_selector = UVSelector(self.panel, self.scene)
+        self._tab_btns   = {}
+        self._tab_frames = {}
+        self._active_tab = None
+
+        # ── Barre d'onglets ───────────────────────────────────────────────────
+        _TAB_BG     = '#111118'
+        _TAB_BG_ON  = '#1a1a21'
+        _TAB_FG     = '#666678'
+        _TAB_FG_ON  = '#c8c8d8'
+        _TAB_ACT    = '#16161f'
+
+        tab_bar = tk.Frame(self.panel, bg=_TAB_BG)
+        tab_bar.pack(side=tk.TOP, fill=tk.X)
+
+        # Séparateur sous la barre
+        tk.Frame(self.panel, height=1, bg='#2a2a3a').pack(side=tk.TOP, fill=tk.X)
+
+        # Zone de contenu partagée
+        self._tab_content = tk.Frame(self.panel, bg='#1a1a21')
+        self._tab_content.pack(fill=tk.BOTH, expand=True)
+
+        def _switch_tab(name):
+            if self._active_tab == name:
+                return
+            if self._active_tab and self._active_tab in self._tab_frames:
+                self._tab_frames[self._active_tab].pack_forget()
+                self._tab_btns[self._active_tab].config(
+                    bg=_TAB_BG, fg=_TAB_FG, relief='flat')
+            self._active_tab = name
+            self._tab_frames[name].pack(fill=tk.BOTH, expand=True)
+            self._tab_btns[name].config(
+                bg=_TAB_BG_ON, fg=_TAB_FG_ON, relief='flat')
+
+        self._switch_tab = _switch_tab
+
+        def _add_tab(name, widget_factory):
+            btn = tk.Button(
+                tab_bar, text=name,
+                bg=_TAB_BG, fg=_TAB_FG,
+                activebackground=_TAB_ACT, activeforeground=_TAB_FG_ON,
+                relief='flat', bd=0,
+                font=('Segoe UI', 8),
+                padx=10, pady=5,
+                cursor='hand2',
+                command=lambda n=name: _switch_tab(n),
+            )
+            btn.pack(side=tk.LEFT)
+            frame = tk.Frame(self._tab_content, bg='#1a1a21')
+            self._tab_btns[name]   = btn
+            self._tab_frames[name] = frame
+            return widget_factory(frame)
+
+        self.uv_selector = _add_tab('UV Selector',
+                                    lambda f: UVSelector(f, self.scene))
         self.uv_selector.pack(fill=tk.BOTH, expand=True)
+        _switch_tab('UV Selector')
 
     def _build_resize_bar(self):
         self._sep = tk.Frame(self.root, width=_SEP_WIDTH, bg='#2a2a3a',
