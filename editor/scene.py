@@ -18,15 +18,67 @@ from OpenGL.GL import (
 
 from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
 from editor import math3d
+from editor.group import Group, Polygon, all_polygons, iter_polygons
 
+
+# ── Vues plates (compatibilité avec gizmo.py et le reste) ─────────────────────
+
+class _PolygonVertices:
+    """Vue plate sur les vertices de tous les polygones de la scène.
+
+    Permet d'utiliser scene.polygons[i] et scene.polygons[i] = v
+    sans modifier app.py ni gizmo.py.
+    """
+    def __init__(self, root: Group):
+        self._root = root
+
+    def _flat(self):
+        return all_polygons(self._root)
+
+    def __len__(self):
+        return len(self._flat())
+
+    def __iter__(self):
+        return (p.vertices for p in self._flat())
+
+    def __getitem__(self, i):
+        return self._flat()[i].vertices   # liste mutable réelle → q[vi] = v fonctionne
+
+    def __setitem__(self, i, value):
+        self._flat()[i].vertices = list(value)
+
+
+class _PolyUVs:
+    """Vue plate sur les UVs de tous les polygones de la scène."""
+    def __init__(self, root: Group):
+        self._root = root
+
+    def _flat(self):
+        return all_polygons(self._root)
+
+    def __len__(self):
+        return len(self._flat())
+
+    def __iter__(self):
+        return (p.uvs for p in self._flat())
+
+    def __getitem__(self, i):
+        return self._flat()[i].uvs
+
+    def __setitem__(self, i, value):
+        self._flat()[i].uvs = list(value)
+
+
+# ── Classe Scene ───────────────────────────────────────────────────────────────
 
 class Scene:
     def __init__(self):
-        self.polygons         = []
-        self.poly_uvs         = []
+        self.root     = Group(name="Scène")
+        self.polygons = _PolygonVertices(self.root)
+        self.poly_uvs = _PolyUVs(self.root)
+
         self.selected_idx     = -1
         self.selected_indices = set()
-        self.groups           = []   # liste de sets d'indices formant des groupes
 
         self.selected_edges         = set()    # set de (poly_idx, edge_idx)
         self.selected_edges_ordered = []       # même éléments, dans l'ordre de sélection
@@ -65,77 +117,97 @@ class Scene:
         yr = _math.radians(cam_yaw)
         cx = round(cam_pos[0] - _math.sin(yr)*5)
         cz = round(cam_pos[2] - _math.cos(yr)*5)
-        self.polygons.append([
-            (cx-1, 0.0, cz-1), (cx+1, 0.0, cz-1),
-            (cx+1, 0.0, cz+1), (cx-1, 0.0, cz+1),
-        ])
-        self.poly_uvs.append([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
+        self.root.add_polygon(
+            [(cx-1, 0.0, cz-1), (cx+1, 0.0, cz-1),
+             (cx+1, 0.0, cz+1), (cx-1, 0.0, cz+1)],
+            [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)],
+        )
 
     def add_triangle(self, cam_pos, cam_yaw):
         import math as _math
         yr = _math.radians(cam_yaw)
         cx = round(cam_pos[0] - _math.sin(yr)*5)
         cz = round(cam_pos[2] - _math.cos(yr)*5)
-        self.polygons.append([
-            (cx,   0.0, cz-1),
-            (cx+1, 0.0, cz+1),
-            (cx-1, 0.0, cz+1),
-        ])
-        self.poly_uvs.append([(0.5, 0.0), (1.0, 1.0), (0.0, 1.0)])
+        self.root.add_polygon(
+            [(cx,   0.0, cz-1),
+             (cx+1, 0.0, cz+1),
+             (cx-1, 0.0, cz+1)],
+            [(0.5, 0.0), (1.0, 1.0), (0.0, 1.0)],
+        )
 
     def rotate_uvs(self):
         """Décale circulairement les UVs des polygons sélectionnés (v0→v1, v1→v2, …)."""
+        flat = all_polygons(self.root)
         for i in self.selected_indices:
-            uvs = self.poly_uvs[i]
-            self.poly_uvs[i] = [uvs[-1]] + list(uvs[:-1])
+            if i < len(flat):
+                poly = flat[i]
+                poly.uvs = [poly.uvs[-1]] + list(poly.uvs[:-1])
 
     def flip_orientation(self):
-        """Inverse l'orientation (normale) des polygons sélectionnés en retournant l'ordre des sommets."""
+        """Inverse l'orientation (normale) des polygons sélectionnés."""
+        flat = all_polygons(self.root)
         for i in self.selected_indices:
-            self.polygons[i] = list(reversed(self.polygons[i]))
-            self.poly_uvs[i] = list(reversed(self.poly_uvs[i]))
+            if i < len(flat):
+                poly = flat[i]
+                poly.vertices = list(reversed(poly.vertices))
+                poly.uvs      = list(reversed(poly.uvs))
 
     def delete_selected(self):
-        deleted = set(self.selected_indices)
-        for i in sorted(deleted, reverse=True):
-            self.polygons.pop(i)
-            self.poly_uvs.pop(i)
-        self._reindex_after_delete(deleted)
-        sorted_deleted = sorted(deleted)
+        flat         = all_polygons(self.root)
+        deleted_set  = set(self.selected_indices)
+        sorted_del   = sorted(deleted_set)
+
+        # Recalculer les sélections d'arêtes et de sommets (encore en int)
         new_edges = set()
         for poly_idx, edge_idx in self.selected_edges:
-            if poly_idx in deleted:
+            if poly_idx in deleted_set:
                 continue
-            shift = sum(1 for d in sorted_deleted if d < poly_idx)
+            shift = sum(1 for d in sorted_del if d < poly_idx)
             new_edges.add((poly_idx - shift, edge_idx))
         self.selected_edges         = new_edges
         self.selected_edges_ordered = [e for e in self.selected_edges_ordered if e in new_edges]
+
         new_verts = set()
         for poly_idx, vert_idx in self.selected_vertices:
-            if poly_idx in deleted:
+            if poly_idx in deleted_set:
                 continue
-            shift = sum(1 for d in sorted_deleted if d < poly_idx)
+            shift = sum(1 for d in sorted_del if d < poly_idx)
             new_verts.add((poly_idx - shift, vert_idx))
         self.selected_vertices = new_verts
+
+        # Supprimer les polygones de l'arbre
+        for i in sorted_del:
+            if i < len(flat):
+                poly = flat[i]
+                if poly.group is not None:
+                    poly.group.remove(poly)
+
+        # Nettoyer les groupes vides
+        for child in list(self.root.children):
+            if isinstance(child, Group) and not all_polygons(child):
+                self.root.children.remove(child)
+
         self.selected_idx     = -1
         self.selected_indices = set()
 
     def duplicate_selected(self):
         if not self.selected_indices:
             return
-        first_new = len(self.polygons)
-        sorted_sel = sorted(self.selected_indices)
-        idx_map = {old: first_new + i for i, old in enumerate(sorted_sel)}
-        for i in sorted_sel:
-            self.polygons.append(copy.deepcopy(self.polygons[i]))
-            self.poly_uvs.append(list(self.poly_uvs[i]))
-        for group in self.groups:
-            new_group = {idx_map[i] for i in group if i in idx_map}
-            if len(new_group) >= 2:
-                self.groups.append(new_group)
-        new_indices = set(range(first_new, len(self.polygons)))
+        flat     = all_polygons(self.root)
+        n_before = len(flat)
+
+        for i in sorted(self.selected_indices):
+            if i < len(flat):
+                poly = flat[i]
+                poly.group.add_polygon(
+                    copy.deepcopy(poly.vertices),
+                    list(poly.uvs),
+                )
+
+        n_after     = len(all_polygons(self.root))
+        new_indices = set(range(n_before, n_after))
         self.selected_indices = new_indices
-        self.selected_idx     = max(new_indices)
+        self.selected_idx     = max(new_indices) if new_indices else -1
 
     # ── Sélection ─────────────────────────────────────────────────────────────
     def selection_center(self):
@@ -166,15 +238,15 @@ class Scene:
                 best_t, best_poly = t, i
         if best_poly < 0:
             return None
-        hit = math3d.vadd(ray_o, math3d.vscale(ray_d, best_t))
+        hit  = math3d.vadd(ray_o, math3d.vscale(ray_d, best_t))
         poly = self.polygons[best_poly]
-        n = len(poly)
+        n    = len(poly)
         best_edge, best_dist = 0, float('inf')
         for ei in range(n):
-            a = tuple(poly[ei])
-            b = tuple(poly[(ei + 1) % n])
+            a  = tuple(poly[ei])
+            b  = tuple(poly[(ei + 1) % n])
             cp = math3d.closest_point_on_seg(hit, a, b)
-            d = math3d.vlength(math3d.vsub(hit, cp))
+            d  = math3d.vlength(math3d.vsub(hit, cp))
             if d < best_dist:
                 best_dist, best_edge = d, ei
         return (best_poly, best_edge)
@@ -188,7 +260,7 @@ class Scene:
                 best_t, best_poly = t, i
         if best_poly < 0:
             return None
-        hit = math3d.vadd(ray_o, math3d.vscale(ray_d, best_t))
+        hit  = math3d.vadd(ray_o, math3d.vscale(ray_d, best_t))
         poly = self.polygons[best_poly]
         best_vi, best_dist = 0, float('inf')
         for vi, v in enumerate(poly):
@@ -199,88 +271,168 @@ class Scene:
 
     # ── Groupes ───────────────────────────────────────────────────────────────
     def get_group_for_polygon(self, idx):
-        """Retourne le set du groupe contenant ce polygon, ou None."""
-        for group in self.groups:
-            if idx in group:
-                return group
-        return None
+        """Retourne un Set[int] des indices des polygones du même sous-groupe, ou None."""
+        flat = all_polygons(self.root)
+        if idx < 0 or idx >= len(flat):
+            return None
+        poly = flat[idx]
+        if poly.group is self.root:
+            return None   # directement sous la racine → pas groupé
+        return {i for i, p in enumerate(flat) if p.group is poly.group}
 
     def group_selected(self):
-        """Groupe les polygons sélectionnés (minimum 2)."""
+        """Groupe les polygons sélectionnés (minimum 2) dans un nouveau sous-groupe."""
         if len(self.selected_indices) < 2:
             return
-        for group in self.groups:
-            group -= self.selected_indices
-        self.groups = [g for g in self.groups if len(g) >= 2]
-        self.groups.append(set(self.selected_indices))
+        old_flat       = all_polygons(self.root)
+        polys_to_group = [old_flat[i] for i in sorted(self.selected_indices)
+                          if i < len(old_flat)]
+
+        new_group = self.root.add_group("Groupe")
+        for poly in polys_to_group:
+            new_group.adopt(poly)
+
+        self._refresh_int_selections(old_flat)
 
     def ungroup_selected(self):
-        """Dissocie les groupes contenant des polygons sélectionnés."""
-        self.groups = [g for g in self.groups
-                       if not g.intersection(self.selected_indices)]
+        """Dissocie les sous-groupes contenant des polygons sélectionnés."""
+        old_flat = all_polygons(self.root)
 
-    def _reindex_after_delete(self, deleted_indices):
-        """Met à jour les groupes après suppression de polygons."""
-        sorted_deleted = sorted(deleted_indices)
-        new_groups = []
-        for group in self.groups:
-            new_group = set()
-            for idx in group:
-                if idx in deleted_indices:
-                    continue
-                shift = sum(1 for d in sorted_deleted if d < idx)
-                new_group.add(idx - shift)
-            if len(new_group) >= 2:
-                new_groups.append(new_group)
-        self.groups = new_groups
+        groups_to_dissolve = set()
+        for i in self.selected_indices:
+            if i < len(old_flat):
+                poly = old_flat[i]
+                if poly.group is not self.root:
+                    groups_to_dissolve.add(poly.group)
+
+        for group in groups_to_dissolve:
+            for child in list(group.children):
+                self.root.adopt(child)
+            if group in self.root.children:
+                self.root.children.remove(group)
+
+        self._refresh_int_selections(old_flat)
+
+    def _refresh_int_selections(self, old_flat):
+        """Recalcule toutes les sélections entières après un changement d'ordre dans l'arbre."""
+        new_flat        = all_polygons(self.root)
+        poly_to_new_idx = {id(p): i for i, p in enumerate(new_flat)}
+
+        # selected_indices
+        new_sel = set()
+        for i in self.selected_indices:
+            if i < len(old_flat):
+                new_i = poly_to_new_idx.get(id(old_flat[i]))
+                if new_i is not None:
+                    new_sel.add(new_i)
+        self.selected_indices = new_sel
+
+        # selected_idx
+        if 0 <= self.selected_idx < len(old_flat):
+            self.selected_idx = poly_to_new_idx.get(id(old_flat[self.selected_idx]), -1)
+        else:
+            self.selected_idx = -1
+
+        # selected_edges
+        new_edges = set()
+        new_edges_ordered = []
+        for pi, ei in self.selected_edges:
+            if pi < len(old_flat):
+                new_pi = poly_to_new_idx.get(id(old_flat[pi]))
+                if new_pi is not None:
+                    new_edges.add((new_pi, ei))
+        for pi, ei in self.selected_edges_ordered:
+            if pi < len(old_flat):
+                new_pi = poly_to_new_idx.get(id(old_flat[pi]))
+                if new_pi is not None:
+                    new_edges_ordered.append((new_pi, ei))
+        self.selected_edges         = new_edges
+        self.selected_edges_ordered = new_edges_ordered
+
+        # selected_vertices
+        new_verts = set()
+        for pi, vi in self.selected_vertices:
+            if pi < len(old_flat):
+                new_pi = poly_to_new_idx.get(id(old_flat[pi]))
+                if new_pi is not None:
+                    new_verts.add((new_pi, vi))
+        self.selected_vertices = new_verts
 
     # ── Sauvegarde ────────────────────────────────────────────────────────────
     def save_json(self, path):
-        """Exporte la scène dans un fichier JSON (sommets et uvs)."""
-        polys_data = []
-        for poly, uvs in zip(self.polygons, self.poly_uvs):
-            polys_data.append({
-                "vertices": [[round(v, 6) for v in vert] for vert in poly],
-                "uvs":      [[round(u, 6), round(v, 6)] for u, v in uvs],
-            })
+        """Exporte la scène dans un fichier JSON hiérarchique."""
+        def serialize(node):
+            if isinstance(node, Polygon):
+                return {
+                    "vertices": [[round(v, 6) for v in vert] for vert in node.vertices],
+                    "uvs":      [[round(u, 6), round(v, 6)] for u, v in node.uvs],
+                }
+            else:
+                return {
+                    "name":     node.name,
+                    "children": [serialize(c) for c in node.children],
+                }
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"polygons": polys_data}, f, indent=2, ensure_ascii=False)
+            json.dump({"root": serialize(self.root)}, f, indent=2, ensure_ascii=False)
 
     def load_json(self, path):
         """Importe une scène depuis un fichier JSON (ajoute aux polygons existants)."""
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        first_new = len(self.polygons)
-        # Nouveau format
-        for p in data.get("polygons", []):
-            self.polygons.append([tuple(v) for v in p["vertices"]])
-            self.poly_uvs.append([tuple(uv) for uv in p["uvs"]])
-        # Ancien format (rétrocompatibilité)
-        for q in data.get("quads", []):
-            center = tuple(q["position"])
-            hw = q["size"][0] / 2
-            hh = q["size"][1] / 2
-            if "x_axis" in q and "y_axis" in q:
-                wa = tuple(q["x_axis"])
-                ha = tuple(q["y_axis"])
-            else:
-                wa, ha = math3d.perp_basis(tuple(q["orientation"]))
-            self.polygons.append(math3d.quad_compose(center, wa, ha, hw, hh))
-            self.poly_uvs.append([tuple(uv) for uv in q["uvs"]])
-        new_indices = set(range(first_new, len(self.polygons)))
+
+        n_before = len(all_polygons(self.root))
+
+        if "root" in data:
+            # Nouveau format hiérarchique
+            def load_node(node_data, parent):
+                if "vertices" in node_data:
+                    parent.add_polygon(
+                        [tuple(v) for v in node_data["vertices"]],
+                        [tuple(uv) for uv in node_data["uvs"]],
+                    )
+                else:
+                    group = parent.add_group(node_data.get("name", "Groupe"))
+                    for child_data in node_data.get("children", []):
+                        load_node(child_data, group)
+            for child_data in data["root"].get("children", []):
+                load_node(child_data, self.root)
+
+        else:
+            # Ancien format plat (rétrocompatibilité)
+            for p in data.get("polygons", []):
+                self.root.add_polygon(
+                    [tuple(v) for v in p["vertices"]],
+                    [tuple(uv) for uv in p["uvs"]],
+                )
+            for q in data.get("quads", []):
+                center = tuple(q["position"])
+                hw     = q["size"][0] / 2
+                hh     = q["size"][1] / 2
+                if "x_axis" in q and "y_axis" in q:
+                    wa = tuple(q["x_axis"])
+                    ha = tuple(q["y_axis"])
+                else:
+                    wa, ha = math3d.perp_basis(tuple(q["orientation"]))
+                self.root.add_polygon(
+                    math3d.quad_compose(center, wa, ha, hw, hh),
+                    [tuple(uv) for uv in q["uvs"]],
+                )
+
+        n_after     = len(all_polygons(self.root))
+        new_indices = set(range(n_before, n_after))
         if new_indices:
             self.selected_indices = new_indices
-            self.selected_idx = max(new_indices)
+            self.selected_idx     = max(new_indices)
 
     # ── Opérations sur arêtes ─────────────────────────────────────────────────
     def rapprocher_edges(self):
         """Déplace le second polygon pour aligner le centre de son arête sur celui du premier."""
         if len(self.selected_edges_ordered) != 2:
             return
-        e1, e2 = self.selected_edges_ordered   # e1 = ancre, e2 = déplacé
+        e1, e2   = self.selected_edges_ordered
         qi1, ei1 = e1
         qi2, ei2 = e2
-        q1, q2 = self.polygons[qi1], self.polygons[qi2]
+        q1, q2   = self.polygons[qi1], self.polygons[qi2]
         c1 = math3d.vscale(math3d.vadd(tuple(q1[ei1]), tuple(q1[(ei1+1) % len(q1)])), 0.5)
         c2 = math3d.vscale(math3d.vadd(tuple(q2[ei2]), tuple(q2[(ei2+1) % len(q2)])), 0.5)
         delta = math3d.vsub(c1, c2)
@@ -290,10 +442,10 @@ class Scene:
         """Crée un nouveau polygon (quad) en reliant les deux arêtes sélectionnées."""
         if len(self.selected_edges_ordered) != 2:
             return
-        e1, e2 = self.selected_edges_ordered
+        e1, e2   = self.selected_edges_ordered
         qi1, ei1 = e1
         qi2, ei2 = e2
-        q1, q2 = self.polygons[qi1], self.polygons[qi2]
+        q1, q2   = self.polygons[qi1], self.polygons[qi2]
         a = tuple(q1[ei1])
         b = tuple(q1[(ei1 + 1) % len(q1)])
         c = tuple(q2[(ei2 + 1) % len(q2)])
@@ -311,23 +463,22 @@ class Scene:
         if math3d.dot(n_new, n_ref) < 0:
             a, b, c, d = d, c, b, a
         # Dédupliquer les vertex coïncidents → triangle si deux vertex sont au même endroit
-        verts = [a, b, c, d]
+        verts  = [a, b, c, d]
         unique = [verts[0]]
         for v in verts[1:]:
             if not any(math3d.vlength(math3d.vsub(v, u)) < 1e-6 for u in unique):
                 unique.append(v)
         if len(unique) < 3:
-            return  # dégénéré, on n'ajoute rien
-        self.polygons.append(unique)
+            return
         quad_uvs = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
-        self.poly_uvs.append(quad_uvs[:len(unique)])
+        self.root.add_polygon(unique, quad_uvs[:len(unique)])
 
     # ── Aperçu texture ────────────────────────────────────────────────────────
     def open_tex_preview(self, root_tk):
         if self.tex_preview_win:
             return
         img = Image.open(TEXTURE_PATH)
-        sz = min(img.width, PREVIEW_MAX_SZ)
+        sz  = min(img.width, PREVIEW_MAX_SZ)
         self.tex_preview_sz = sz
         img = img.resize((sz, sz), Image.LANCZOS)
 
@@ -338,7 +489,7 @@ class Scene:
 
         photo = ImageTk.PhotoImage(img)
         label = tk.Label(self.tex_preview_win, image=photo)
-        label._photo = photo  # empêche le garbage collection
+        label._photo = photo
         label.pack()
         label.bind('<Button-1>', lambda e: (
             self.assign_uv_from_atlas_click((e.x, e.y)),
@@ -358,7 +509,6 @@ class Scene:
         if entry and self.selected_indices:
             u0 = entry["x"] / self.atlas_w
             u1 = (entry["x"] + entry["width"]) / self.atlas_w
-            # V inversé : texture uploadée verticalement retournée
             v1 = 1.0 - entry["y"] / self.atlas_h
             v0 = 1.0 - (entry["y"] + entry["height"]) / self.atlas_h
             corners = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
@@ -374,10 +524,18 @@ class Scene:
 
     # ── Rendu ─────────────────────────────────────────────────────────────────
     def draw(self):
+        # Indices nécessaires pour les arêtes/sommets sélectionnés
+        needed = ({pi for pi, _ in self.selected_edges} |
+                  {pi for pi, _ in self.selected_vertices})
+        indexed = {}  # {poly_idx: vertices} collecté pendant la passe principale
+
         glEnable(GL_CULL_FACE);  glCullFace(GL_BACK);  glFrontFace(GL_CW)
-        for i, poly in enumerate(self.polygons):
-            sel = (i in self.selected_indices)
-            uvs = self.poly_uvs[i] if i < len(self.poly_uvs) else [(0,0),(1,0),(1,1),(0,1)]
+        for i, poly_obj in enumerate(iter_polygons(self.root)):
+            poly = poly_obj.vertices
+            uvs  = poly_obj.uvs
+            sel  = (i in self.selected_indices)
+            if i in needed:
+                indexed[i] = poly
             glEnable(GL_TEXTURE_2D);  glBindTexture(GL_TEXTURE_2D, self.poly_texture)
             glColor3f(1.0, 1.0, 1.0)
             glBegin(GL_TRIANGLE_FAN)
@@ -388,7 +546,7 @@ class Scene:
             glLineWidth(2.5 if sel else 1.5)
             if sel:
                 glColor4f(1.0, 0.15, 0.15, 1.0)
-            elif self.get_group_for_polygon(i) is not None:
+            elif poly_obj.group is not self.root:
                 glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
                 glColor4f(0.2, 0.7, 1.0, 0.5)
             else:
@@ -406,8 +564,8 @@ class Scene:
             glColor3f(0.05, 0.05, 1.0)
             glBegin(GL_LINES)
             for poly_idx, edge_idx in self.selected_edges:
-                if poly_idx < len(self.polygons):
-                    p = self.polygons[poly_idx]
+                p = indexed.get(poly_idx)
+                if p is not None:
                     glVertex3f(*p[edge_idx])
                     glVertex3f(*p[(edge_idx + 1) % len(p)])
             glEnd()
@@ -417,9 +575,8 @@ class Scene:
             glColor3f(0.05, 1.0, 0.3)
             glBegin(GL_POINTS)
             for poly_idx, vert_idx in self.selected_vertices:
-                if poly_idx < len(self.polygons):
-                    p = self.polygons[poly_idx]
-                    if vert_idx < len(p):
-                        glVertex3f(*p[vert_idx])
+                p = indexed.get(poly_idx)
+                if p is not None and vert_idx < len(p):
+                    glVertex3f(*p[vert_idx])
             glEnd()
             glPointSize(1.0)
