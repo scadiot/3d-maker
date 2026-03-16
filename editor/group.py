@@ -26,19 +26,20 @@ class Polygon:
 
 
 class Group:
-    """Nœud de la hiérarchie de scène. Contient des Polygon et/ou des Group enfants."""
+    """Nœud de la hiérarchie de scène. Contient des Group enfants et des Polygon."""
 
     def __init__(self, name: str = "Groupe", parent: Optional['Group'] = None):
-        self.name:     str                          = name
-        self.parent:   Optional['Group']            = parent
-        self.children: List[Union['Group', Polygon]] = []
+        self.name:     str                = name
+        self.parent:   Optional['Group'] = parent
+        self.children: List['Group']     = []
+        self.polygons: List[Polygon]     = []
 
     # ── Ajout ──────────────────────────────────────────────────────────────────
 
     def add_polygon(self, vertices: List[Vertex], uvs: List[UV]) -> Polygon:
         """Crée un Polygon, l'ajoute à ce groupe et retourne l'objet créé."""
         poly = Polygon(vertices, uvs, group=self)
-        self.children.append(poly)
+        self.polygons.append(poly)
         return poly
 
     def add_group(self, name: str = "Groupe") -> 'Group':
@@ -47,27 +48,35 @@ class Group:
         self.children.append(child)
         return child
 
-    def adopt(self, child: Union['Group', Polygon]) -> None:
-        """Déplace un Polygon ou Group existant dans ce groupe."""
-        old_parent = child.group if isinstance(child, Polygon) else child.parent
+    def adopt_polygon(self, poly: Polygon) -> None:
+        """Déplace un Polygon existant dans ce groupe."""
+        old_parent = poly.group
+        if old_parent is not None and old_parent is not self:
+            old_parent.polygons.remove(poly)
+        poly.group = self
+        if poly not in self.polygons:
+            self.polygons.append(poly)
+
+    def adopt_group(self, child: 'Group') -> None:
+        """Déplace un Group existant dans ce groupe."""
+        old_parent = child.parent
         if old_parent is not None and old_parent is not self:
             old_parent.children.remove(child)
-        if isinstance(child, Polygon):
-            child.group = self
-        else:
-            child.parent = self
+        child.parent = self
         if child not in self.children:
             self.children.append(child)
 
     # ── Suppression ────────────────────────────────────────────────────────────
 
-    def remove(self, child: Union['Group', Polygon]) -> None:
-        """Retire un enfant direct de ce groupe (sans le supprimer de la mémoire)."""
+    def remove_polygon(self, poly: Polygon) -> None:
+        """Retire un Polygon direct de ce groupe (sans le supprimer de la mémoire)."""
+        self.polygons.remove(poly)
+        poly.group = None
+
+    def remove_group(self, child: 'Group') -> None:
+        """Retire un Group enfant direct de ce groupe (sans le supprimer de la mémoire)."""
         self.children.remove(child)
-        if isinstance(child, Polygon):
-            child.group = None
-        else:
-            child.parent = None
+        child.parent = None
 
     # ── Utilitaires ────────────────────────────────────────────────────────────
 
@@ -76,7 +85,7 @@ class Group:
         return self.parent is None
 
     def __repr__(self) -> str:
-        return f"Group({self.name!r}, {len(self.children)} enfants)"
+        return f"Group({self.name!r}, {len(self.children)} enfants, {len(self.polygons)} polygones)"
 
 
 # ── Helpers de traversal ───────────────────────────────────────────────────────
@@ -86,6 +95,7 @@ def iter_polygons(node: Union[Group, Polygon]) -> Iterator[Polygon]:
     if isinstance(node, Polygon):
         yield node
     else:
+        yield from node.polygons
         for child in node.children:
             yield from iter_polygons(child)
 
@@ -93,17 +103,16 @@ def iter_polygons(node: Union[Group, Polygon]) -> Iterator[Polygon]:
 def iter_groups(node: Group) -> Iterator[Group]:
     """Parcourt récursivement le sous-arbre et génère tous les Group (sauf la racine elle-même)."""
     for child in node.children:
-        if isinstance(child, Group):
-            yield child
-            yield from iter_groups(child)
+        yield child
+        yield from iter_groups(child)
 
 
 def iter_children(node: Group) -> Iterator[Union[Group, Polygon]]:
     """Parcourt récursivement le sous-arbre et génère tous les enfants (groupes et polygones)."""
+    yield from node.polygons
     for child in node.children:
         yield child
-        if isinstance(child, Group):
-            yield from iter_children(child)
+        yield from iter_children(child)
 
 
 def all_polygons(node: Union[Group, Polygon]) -> List[Polygon]:

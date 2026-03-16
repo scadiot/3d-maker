@@ -112,23 +112,25 @@ class Scene:
         self.atlas_w, self.atlas_h = w, h
 
     # ── Gestion des polygons ──────────────────────────────────────────────────
-    def add_polygon(self, cam_pos, cam_yaw):
+    def add_polygon(self, cam_pos, cam_yaw, group=None):
         import math as _math
         yr = _math.radians(cam_yaw)
         cx = round(cam_pos[0] - _math.sin(yr)*5)
         cz = round(cam_pos[2] - _math.cos(yr)*5)
-        self.root.add_polygon(
+        target = group if group is not None else self.root
+        target.add_polygon(
             [(cx-1, 0.0, cz-1), (cx+1, 0.0, cz-1),
              (cx+1, 0.0, cz+1), (cx-1, 0.0, cz+1)],
             [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)],
         )
 
-    def add_triangle(self, cam_pos, cam_yaw):
+    def add_triangle(self, cam_pos, cam_yaw, group=None):
         import math as _math
         yr = _math.radians(cam_yaw)
         cx = round(cam_pos[0] - _math.sin(yr)*5)
         cz = round(cam_pos[2] - _math.cos(yr)*5)
-        self.root.add_polygon(
+        target = group if group is not None else self.root
+        target.add_polygon(
             [(cx,   0.0, cz-1),
              (cx+1, 0.0, cz+1),
              (cx-1, 0.0, cz+1)],
@@ -180,7 +182,7 @@ class Scene:
             if i < len(flat):
                 poly = flat[i]
                 if poly.group is not None:
-                    poly.group.remove(poly)
+                    poly.group.remove_polygon(poly)
 
         # Nettoyer les groupes vides
         for child in list(self.root.children):

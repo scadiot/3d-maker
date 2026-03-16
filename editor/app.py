@@ -30,6 +30,7 @@ from editor.scene        import Scene
 from editor.gizmo        import Gizmo
 from editor.renderer     import draw_grid
 from editor.uv_selector  import UVSelector
+from editor.group_panel  import GroupPanel
 
 
 class Viewport3D(OpenGLFrame):
@@ -52,6 +53,7 @@ class App:
     def __init__(self):
         self.camera         = Camera()
         self.scene          = Scene()
+        self.current_group  = self.scene.root
         self.gizmo          = Gizmo()
         self.selection_mode = 'polygon'
         self.panel_width    = PANEL_WIDTH
@@ -78,6 +80,7 @@ class App:
         self._build_menu()
         self._build_toolbar()
         self._build_toolbar2()
+        self._build_statusbar()
         self._build_panel()
         self._build_resize_bar()
         self._build_viewport()
@@ -124,9 +127,9 @@ class App:
         # ── Polygon ───────────────────────────────────────────────────────────
         m_poly = tk.Menu(menubar, tearoff=0)
         m_poly.add_command(label="Ajouter polygon",
-                           command=lambda: self.scene.add_polygon(self.camera.pos, self.camera.yaw))
+                           command=lambda: self.scene.add_polygon(self.camera.pos, self.camera.yaw, self.current_group))
         m_poly.add_command(label="Ajouter triangle",
-                           command=lambda: self.scene.add_triangle(self.camera.pos, self.camera.yaw))
+                           command=lambda: self.scene.add_triangle(self.camera.pos, self.camera.yaw, self.current_group))
         m_poly.add_separator()
         m_poly.add_command(label="Inverser orientation", accelerator="N",
                            command=self.scene.flip_orientation)
@@ -306,17 +309,27 @@ class App:
         add_btn(make_icon(ico_save),      self._save_json_dialog,  "Enregistrer")
         add_btn(make_icon(ico_load),      self._load_json_dialog,  "Charger")
         add_sep()
-        add_btn(make_icon(ico_polygon),   lambda: self.scene.add_polygon(self.camera.pos, self.camera.yaw),  "Polygon")
-        add_btn(make_icon(ico_triangle),  lambda: self.scene.add_triangle(self.camera.pos, self.camera.yaw), "Triangle")
+        add_btn(make_icon(ico_polygon),
+                lambda: (self.scene.add_polygon(self.camera.pos, self.camera.yaw, self.current_group), self._refresh_group_panel()),
+                "Polygon")
+        add_btn(make_icon(ico_triangle),
+                lambda: (self.scene.add_triangle(self.camera.pos, self.camera.yaw, self.current_group), self._refresh_group_panel()),
+                "Triangle")
         add_sep()
-        add_btn(make_icon(ico_duplicate), self.scene.duplicate_selected, "Dupliquer", "C")
+        add_btn(make_icon(ico_duplicate),
+                lambda: (self.scene.duplicate_selected(), self._refresh_group_panel()),
+                "Dupliquer", "C")
         add_btn(make_icon(ico_delete),
-                lambda: (self.scene.delete_selected(), self.gizmo.stop_drag())
+                lambda: (self.scene.delete_selected(), self.gizmo.stop_drag(), self._refresh_group_panel())
                 if self.scene.selected_indices else None,
                 "Supprimer", "Suppr")
         add_sep()
-        add_btn(make_icon(ico_group),   self.scene.group_selected,   "Grouper",   "G")
-        add_btn(make_icon(ico_ungroup), self.scene.ungroup_selected, "Dégrouper", "H")
+        add_btn(make_icon(ico_group),
+                lambda: (self.scene.group_selected(), self._refresh_group_panel()),
+                "Grouper", "G")
+        add_btn(make_icon(ico_ungroup),
+                lambda: (self.scene.ungroup_selected(), self._refresh_group_panel()),
+                "Dégrouper", "H")
         add_sep()
 
         # Boutons gizmo (radio-style) — mis en valeur selon self.gizmo.mode
@@ -419,6 +432,10 @@ class App:
             else:
                 w.pack_forget()
 
+    def _refresh_group_panel(self):
+        if hasattr(self, 'group_panel'):
+            self.group_panel.refresh()
+
     def _sync_gizmo_btns(self):
         for mode, (btn, bg_off, bg_on) in self._gizmo_btns.items():
             btn.config(bg=bg_on if self.gizmo.mode == mode else bg_off)
@@ -488,7 +505,57 @@ class App:
         self.uv_selector = _add_tab('UV Selector',
                                     lambda f: UVSelector(f, self.scene))
         self.uv_selector.pack(fill=tk.BOTH, expand=True)
+
+        self.group_panel = _add_tab('Groupes',
+                                    lambda f: GroupPanel(f, self.scene, self))
+        self.group_panel.pack(fill=tk.BOTH, expand=True)
+
         _switch_tab('UV Selector')
+
+    def _build_statusbar(self):
+        BG = '#111118'
+        FG = '#888899'
+        FG_HI = '#c8c8d8'
+
+        self._statusbar = tk.Frame(self.root, bg=BG, height=22)
+        self._statusbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self._statusbar.pack_propagate(False)
+
+        tk.Frame(self._statusbar, height=1, bg='#2a2a3a').pack(side=tk.TOP, fill=tk.X)
+
+        self._status_sel_lbl = tk.Label(self._statusbar, text='', bg=BG, fg=FG_HI,
+                                        font=('Segoe UI', 8), anchor='w', padx=8)
+        self._status_sel_lbl.pack(side=tk.LEFT)
+
+        tk.Frame(self._statusbar, width=1, bg='#2a2a3a').pack(side=tk.LEFT, fill=tk.Y, pady=3)
+
+        self._status_group_lbl = tk.Label(self._statusbar, text='', bg=BG, fg=FG,
+                                          font=('Segoe UI', 8), anchor='w', padx=8)
+        self._status_group_lbl.pack(side=tk.LEFT)
+
+        self._status_right_lbl = tk.Label(self._statusbar, text='', bg=BG, fg=FG,
+                                          font=('Segoe UI', 8), anchor='e', padx=8)
+        self._status_right_lbl.pack(side=tk.RIGHT)
+
+    def _update_statusbar(self):
+        n = len(self.scene.selected_indices)
+        if n == 0:
+            sel_text = 'Aucune sélection'
+        elif n == 1:
+            sel_text = '1 polygon sélectionné'
+        else:
+            sel_text = f'{n} polygons sélectionnés'
+        self._status_sel_lbl.config(text=sel_text)
+
+        grp = self.current_group
+        grp_name = getattr(grp, 'name', None) or 'Racine'
+        self._status_group_lbl.config(text=f'Groupe : {grp_name}')
+
+        mode_labels = {'translate': 'Translater', 'rotate': 'Rotation', 'scale': 'Échelle'}
+        sel_mode_labels = {'polygon': 'Polygon', 'edge': 'Arête', 'vertex': 'Vertex'}
+        right = (f"Gizmo : {mode_labels.get(self.gizmo.mode, self.gizmo.mode)}   "
+                 f"Mode : {sel_mode_labels.get(self.selection_mode, self.selection_mode)}")
+        self._status_right_lbl.config(text=right)
 
     def _build_resize_bar(self):
         self._sep = tk.Frame(self.root, width=_SEP_WIDTH, bg='#2a2a3a',
@@ -606,9 +673,11 @@ class App:
         if key == 'delete' and self.scene.selected_indices:
             self.scene.delete_selected()
             self.gizmo.stop_drag()
+            self._refresh_group_panel()
 
         if key == 'c':
             self.scene.duplicate_selected()
+            self._refresh_group_panel()
 
         if key == 'space' and self.scene.selected_indices:
             self.gizmo.cycle_mode(len(self.scene.selected_indices) > 1)
@@ -616,9 +685,11 @@ class App:
 
         if key == 'g' and len(self.scene.selected_indices) >= 2:
             self.scene.group_selected()
+            self._refresh_group_panel()
 
         if key == 'h' and self.scene.selected_indices:
             self.scene.ungroup_selected()
+            self._refresh_group_panel()
 
         if key == 'r' and self.scene.selected_indices:
             self.scene.rotate_uvs()
@@ -717,6 +788,7 @@ class App:
         if path:
             self.scene.load_json(path)
             self.gizmo.stop_drag()
+            self._refresh_group_panel()
 
     def _pick_polygon(self, mx, my):
         return self.scene.pick_polygon(tuple(self.camera.pos), self.camera.screen_ray(mx, my))
@@ -758,21 +830,21 @@ class App:
         self._sync_toolbar2_btns()
 
     def _apply_selection(self, clicked_idx, ctrl_held):
-        """Applique la sélection selon Ctrl, en expandant aux groupes."""
-        group = self.scene.get_group_for_polygon(clicked_idx) if clicked_idx >= 0 else None
-        to_select = group if group else ({clicked_idx} if clicked_idx >= 0 else set())
-
+        """Applique la sélection selon Ctrl."""
         if ctrl_held:
             if clicked_idx >= 0:
                 if clicked_idx in self.scene.selected_indices:
-                    self.scene.selected_indices -= to_select
+                    self.scene.selected_indices.discard(clicked_idx)
                     self.scene.selected_idx = next(iter(self.scene.selected_indices), -1)
                 else:
-                    self.scene.selected_indices |= to_select
+                    self.scene.selected_indices.add(clicked_idx)
                     self.scene.selected_idx = clicked_idx
         else:
             self.scene.selected_idx     = clicked_idx
-            self.scene.selected_indices = set(to_select) if clicked_idx >= 0 else set()
+            self.scene.selected_indices = {clicked_idx} if clicked_idx >= 0 else set()
+
+        if hasattr(self, 'group_panel'):
+            self.group_panel.sync_selection(self.scene.selected_indices)
 
     # ── Mise à jour ───────────────────────────────────────────────────────────
     def _update_loop(self):
@@ -784,6 +856,7 @@ class App:
             self.gizmo.update_drag(self.mouse_x, self.mouse_y, self.scene, self.camera)
 
         self.camera.apply_movement(self.keys_pressed, dt)
+        self._update_statusbar()
 
         self.root.after(16, self._update_loop)
 
