@@ -18,6 +18,8 @@ from OpenGL.GLU import gluPerspective
 
 from editor.constants import (PANEL_WIDTH, VIEW_WIDTH, HEIGHT,
                                FOV, NEAR, FAR, ATLAS_JSON, TEXTURE_PATH)
+
+SNAP_VALUES = ["1", "0.5", "0.25", "0.1", "0.05", "0.01"]
 from editor.camera   import Camera
 from editor.scene    import Scene
 from editor.gizmo    import Gizmo
@@ -331,6 +333,28 @@ class App:
             self._sel_btns[mode] = (b, BG, BG_ON)
 
         self._sync_sel_mode_btns()
+        add_sep()
+
+        # ── Snap ──────────────────────────────────────────────────────────────
+        tk.Label(self.toolbar, text="Snap :", bg=BG, fg='#c8c8d8',
+                 font=('Segoe UI', 8)).pack(side=tk.LEFT, padx=(4, 2))
+
+        self._snap_var = tk.StringVar(value=str(self.gizmo.translate_snap))
+        snap_menu = tk.OptionMenu(self.toolbar, self._snap_var, *SNAP_VALUES,
+                                  command=self._on_snap_change)
+        snap_menu.config(bg=BG, fg='#c8c8d8',
+                         activebackground=BG_ACT, activeforeground='#c8c8d8',
+                         highlightthickness=0, relief='flat', bd=0,
+                         font=('Segoe UI', 8), width=4)
+        snap_menu['menu'].config(bg='#2a2a3a', fg='#c8c8d8',
+                                 activebackground='#2d4080',
+                                 activeforeground='#c8c8d8')
+        snap_menu.pack(side=tk.LEFT, padx=2, pady=4)
+
+    def _on_snap_change(self, *_):
+        v = float(self._snap_var.get())
+        self.gizmo.translate_snap = v
+        self.gizmo.scale_snap     = v
 
     def _sync_gizmo_btns(self):
         for mode, (btn, bg_off, bg_on) in self._gizmo_btns.items():
@@ -447,6 +471,14 @@ class App:
             next_mode = modes[(modes.index(self.selection_mode) + 1) % len(modes)]
             self.sel_mode_var.set({'polygon': 'Polygon', 'edge': 'Arête', 'vertex': 'Vertex'}[next_mode])
             self._on_selection_mode_change()
+
+        if key in ('prior', 'next'):   # Page Up / Page Down
+            idx = SNAP_VALUES.index(self._snap_var.get()) if self._snap_var.get() in SNAP_VALUES else 0
+            if key == 'prior' and idx > 0:
+                self._snap_var.set(SNAP_VALUES[idx - 1])
+            elif key == 'next' and idx < len(SNAP_VALUES) - 1:
+                self._snap_var.set(SNAP_VALUES[idx + 1])
+            self._on_snap_change()
 
         if key == 'escape':
             self._on_close()
