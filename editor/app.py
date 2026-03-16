@@ -357,114 +357,56 @@ class App:
         BG      = '#16161f'
         BG_ACT  = '#2a2a3a'
         IC      = '#c8c8d8'
-        SZ      = 22
         BTN_SZ  = 34
 
         self.toolbar2 = tk.Frame(self.root, bg=BG, height=BTN_SZ + 4)
         self.toolbar2.pack(side=tk.TOP, fill=tk.X)
         self.toolbar2.pack_propagate(False)
 
-        def make_icon(draw_fn):
-            img = Image.new('RGBA', (SZ, SZ), (0, 0, 0, 0))
-            draw_fn(ImageDraw.Draw(img), SZ, IC)
-            ph = ImageTk.PhotoImage(img)
-            self._icons.append(ph)
-            return ph
-
-        def add_btn(icon, cmd, label='', shortcut=''):
+        def add_btn(cmd, label='', shortcut=''):
+            display = f"{label} [{shortcut}]" if shortcut else label
             btn = tk.Button(
-                self.toolbar2, image=icon, command=cmd,
+                self.toolbar2, text=display, command=cmd,
                 bg=BG, activebackground=BG_ACT,
+                fg=IC, activeforeground=IC,
                 relief='flat', bd=0,
-                width=BTN_SZ, height=BTN_SZ,
+                font=('Segoe UI', 8),
+                padx=6, pady=4,
                 cursor='hand2',
             )
             btn.pack(side=tk.LEFT, padx=1, pady=2)
-
-            tip_text = f"{label} [{shortcut}]" if shortcut else label
-            tip_win  = [None]
-
-            def show_tip(_e):
-                if tip_win[0] or not tip_text:
-                    return
-                x = btn.winfo_rootx() + BTN_SZ // 2
-                y = btn.winfo_rooty() + BTN_SZ + 6
-                w = tk.Toplevel(self.root)
-                w.wm_overrideredirect(True)
-                w.wm_geometry(f"+{x}+{y}")
-                tk.Label(w, text=tip_text, bg='#2a2a3a', fg='#c8c8d8',
-                         font=('Segoe UI', 8), relief='flat', bd=1,
-                         padx=6, pady=3).pack()
-                tip_win[0] = w
-
-            def hide_tip(_e):
-                if tip_win[0]:
-                    tip_win[0].destroy()
-                    tip_win[0] = None
-
-            btn.bind('<Enter>', show_tip)
-            btn.bind('<Leave>', hide_tip)
-            btn.bind('<ButtonPress>', hide_tip)
-            btn.bind('<Enter>', lambda _e, b=btn: b.config(bg=BG_ACT), add='+')
-            btn.bind('<Leave>', lambda _e, b=btn: b.config(bg=BG), add='+')
+            btn.bind('<Enter>', lambda _e, b=btn: b.config(bg=BG_ACT))
+            btn.bind('<Leave>', lambda _e, b=btn: b.config(bg=BG))
             return btn
 
-        def add_sep():
-            tk.Frame(self.toolbar2, width=1, bg='#38384a').pack(
-                side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
-
-        # ── Icônes ────────────────────────────────────────────────────────────
-        def ico_flip(d, s, c):
-            cx = s // 2
-            d.line([cx, 3, cx, s-3], fill=c, width=2)
-            pts_l = [3, s//2, cx-2, 4, cx-2, s-4]
-            d.polygon(pts_l, outline=c)
-            pts_r = [s-3, s//2, cx+2, s-4, cx+2, 4]
-            d.polygon(pts_r, fill=c)
-
-        def ico_rotate_uv(d, s, c):
-            r = s//2 - 3
-            cx, cy = s//2, s//2
-            d.arc([cx-r, cy-r, cx+r, cy+r], start=60, end=330, fill=c, width=1)
-            ax = cx + r * math.cos(math.radians(60))
-            ay = cy + r * math.sin(math.radians(60))
-            d.polygon([ax, ay, ax+4, ay-1, ax+1, ay+4], fill=c)
-            d.rectangle([cx-3, cy-3, cx+3, cy+3], outline=c, width=1)
-
-        def ico_rapprocher(d, s, c):
-            m = s // 2
-            d.line([3, m-4, s-3, m-4], fill=c, width=1)
-            d.line([3, m+4, s-3, m+4], fill=c, width=1)
-            d.line([m, m-4, m, m+4],   fill=c, width=2)
-            d.polygon([m, m-1, m-3, m-5, m+3, m-5], fill=c)
-            d.polygon([m, m+1, m-3, m+5, m+3, m+5], fill=c)
-
-        def ico_create_from_edges(d, s, c):
-            pts = [s//2, 3, s-3, s-3, 3, s-3]
-            d.polygon(pts, outline=c, width=2)
-            r = 3
-            for px, py in [(s//2, 3), (s-3, s-3), (3, s-3)]:
-                d.ellipse([px-r, py-r, px+r, py+r], fill=c)
-
         # ── Placement ─────────────────────────────────────────────────────────
-        add_btn(make_icon(ico_flip),
-                self.scene.flip_orientation,
+        add_btn(self.scene.flip_orientation,
                 "Inverser orientation", "N")
-        add_btn(make_icon(ico_rotate_uv),
-                self.scene.rotate_uvs,
+        add_btn(self.scene.rotate_uvs,
                 "Rotation UVs", "R")
-        add_sep()
-        add_btn(make_icon(ico_rapprocher),
-                self.scene.rapprocher_edges,
-                "Rapprocher arêtes")
-        add_btn(make_icon(ico_create_from_edges),
-                self.scene.create_polygon_from_edges,
-                "Créer polygon depuis arêtes")
+        self._sep_edges = tk.Frame(self.toolbar2, width=1, bg='#38384a')
+        self._sep_edges.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
+        self._btn_rapprocher = add_btn(self.scene.rapprocher_edges,
+                                       "Rapprocher arêtes")
+        self._btn_create_from_edges = add_btn(self.scene.create_polygon_from_edges,
+                                              "Créer polygon depuis arêtes")
+        self._sync_toolbar2_btns()
 
     def _on_snap_change(self, *_):
         v = float(self._snap_var.get())
         self.gizmo.translate_snap = v
         self.gizmo.scale_snap     = v
+
+    def _sync_toolbar2_btns(self):
+        two_edges = len(self.scene.selected_edges_ordered) == 2
+        widgets = [self._sep_edges, self._btn_rapprocher, self._btn_create_from_edges]
+        for w in widgets:
+            if two_edges:
+                w.pack(side=tk.LEFT, fill=tk.Y if w is self._sep_edges else tk.NONE,
+                       padx=5 if w is self._sep_edges else 1,
+                       pady=5 if w is self._sep_edges else 2)
+            else:
+                w.pack_forget()
 
     def _sync_gizmo_btns(self):
         for mode, (btn, bg_off, bg_on) in self._gizmo_btns.items():
@@ -549,6 +491,7 @@ class App:
         if self.selection_mode != 'vertex':
             self.scene.selected_vertices.clear()
         self._sync_sel_mode_btns()
+        self._sync_toolbar2_btns()
 
     def _handle_keyboard(self, key):
         if key == 't' and self.scene.selected_idx >= 0:
@@ -699,8 +642,7 @@ class App:
             if not ctrl_held:
                 self.scene.selected_edges.clear()
                 self.scene.selected_edges_ordered.clear()
-            return
-        if ctrl_held:
+        elif ctrl_held:
             if edge in self.scene.selected_edges:
                 self.scene.selected_edges.discard(edge)
                 self.scene.selected_edges_ordered.remove(edge)
@@ -710,6 +652,7 @@ class App:
         else:
             self.scene.selected_edges = {edge}
             self.scene.selected_edges_ordered = [edge]
+        self._sync_toolbar2_btns()
 
     def _apply_selection(self, clicked_idx, ctrl_held):
         """Applique la sélection selon Ctrl, en expandant aux groupes."""
