@@ -27,6 +27,9 @@ class GroupPanel(tk.Frame):
         self._drop_iid        = None
         self._hover_iid       = None
         self._syncing         = False
+        self._hide_polygons   = False
+        self._hide_poly_btn   = None
+        self._visible_polys   = None  # None = tous ; set = filtre actif
         if self._state is not None:
             self._state.subscribe('selection_changed', self._on_selection_changed)
             self._state.subscribe('current_group_changed', self._on_current_group_changed)
@@ -55,6 +58,19 @@ class GroupPanel(tk.Frame):
 
         make_btn('+', self._add_group)
         make_btn('−', self._delete_selected)
+
+        tk.Frame(toolbar, width=1, bg='#2a2a3a').pack(side=tk.LEFT, padx=4, fill=tk.Y, pady=2)
+
+        self._hide_poly_btn = tk.Button(
+            toolbar, text='◆', command=self._toggle_hide_polygons,
+            bg=self._BTN_BG, fg=self._FG,
+            activebackground=self._BTN_ACT, activeforeground=self._FG,
+            relief='flat', bd=0, font=('Segoe UI', 12), width=3,
+            cursor='hand2',
+        )
+        self._hide_poly_btn.pack(side=tk.LEFT, padx=2, pady=2)
+        self._hide_poly_btn.bind('<Enter>', lambda _e: self._hide_poly_btn.config(bg=self._BTN_ACT))
+        self._hide_poly_btn.bind('<Leave>', lambda _e: self._refresh_hide_poly_btn())
 
         tk.Frame(self, height=1, bg='#2a2a3a').pack(side=tk.TOP, fill=tk.X)
 
@@ -103,11 +119,28 @@ class GroupPanel(tk.Frame):
 
     # ── Rafraîchissement ──────────────────────────────────────────────────────
 
+    def _toggle_hide_polygons(self):
+        """Bascule le mode masquage des polygones dans le treeview."""
+        self._hide_polygons = not self._hide_polygons
+        self._refresh_hide_poly_btn()
+        self.refresh()
+
+    def _refresh_hide_poly_btn(self):
+        """Met à jour la couleur du bouton selon l'état actif."""
+        color = '#2a2a6a' if self._hide_polygons else self._BTN_BG
+        self._hide_poly_btn.config(bg=color)
+
     def refresh(self):
         """Reconstruit l'arbre depuis scene.root."""
         self._iid_to_obj.clear()
         for iid in self._tree.get_children():
             self._tree.delete(iid)
+        if self._hide_polygons:
+            flat = all_polygons(self._scene.root)
+            self._visible_polys = {flat[i] for i in self._scene.selected_indices
+                                   if i < len(flat)}
+        else:
+            self._visible_polys = None
         self._insert_group(self._scene.root, '')
         self.sync_selection(self._scene.selected_indices)
 
@@ -120,7 +153,11 @@ class GroupPanel(tk.Frame):
         flat    = all_polygons(self._scene.root)
         idx_map = {id(p): i for i, p in enumerate(flat)}
         indices = {idx_map[id(p)] for p in polygons if id(p) in idx_map}
-        self.sync_selection(indices)
+        if self._hide_polygons:
+            # Reconstruire l'arbre : les polygones visibles ont peut-être changé
+            self.refresh()
+        else:
+            self.sync_selection(indices)
 
     def _on_current_group_changed(self, group: Group):
         """Abonné à StateManager.current_group_changed — met à jour la statusbar."""
@@ -140,7 +177,8 @@ class GroupPanel(tk.Frame):
         for child in group.children:
             self._insert_group(child, iid)
         for poly in group.polygons:
-            self._insert_polygon(poly, iid)
+            if self._visible_polys is None or poly in self._visible_polys:
+                self._insert_polygon(poly, iid)
 
     def _insert_polygon(self, poly: Polygon, parent_iid: str):
         flat  = all_polygons(self._scene.root)
