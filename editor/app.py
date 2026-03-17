@@ -154,6 +154,7 @@ class App:
         BG      = '#16161f'
         BG_ACT  = '#2a2a3a'
         BG_ON   = '#2d4080'
+        self._BG_DIS = '#1e1e28'   # bouton désactivé
         IC      = '#c8c8d8'   # couleur icône
         SZ      = 22           # taille icône en px
         BTN_SZ  = 34           # taille bouton
@@ -209,7 +210,7 @@ class App:
             btn.bind('<Enter>', show_tip)
             btn.bind('<Leave>', hide_tip)
             btn.bind('<ButtonPress>', hide_tip)
-            btn.bind('<Enter>', lambda _e, b=btn: b.config(bg=BG_ACT) if b['bg'] != BG_ON else None, add='+')
+            btn.bind('<Enter>', lambda _e, b=btn: b.config(bg=BG_ACT) if b['bg'] != BG_ON and str(b['state']) != 'disabled' else None, add='+')
             btn.bind('<Leave>', lambda _e, b=btn: b.config(bg=BG) if b['bg'] == BG_ACT else None, add='+')
             return btn
 
@@ -442,8 +443,14 @@ class App:
             self.group_panel.refresh()
 
     def _sync_gizmo_btns(self):
+        restricted = self.state.selection_mode in ('vertex', 'edge')
         for mode, (btn, bg_off, bg_on) in self._gizmo_btns.items():
-            btn.config(bg=bg_on if self.gizmo.mode == mode else bg_off)
+            disabled = restricted and mode in ('rotate', 'scale')
+            if disabled:
+                btn.config(state='disabled', bg=self._BG_DIS, cursor='')
+            else:
+                btn.config(state='normal', cursor='hand2',
+                           bg=bg_on if self.gizmo.mode == mode else bg_off)
 
     def _sync_sel_mode_btns(self):
         for mode, (btn, bg_off, bg_on) in self._sel_btns.items():
@@ -672,8 +679,12 @@ class App:
 
     def _on_selection_mode_change(self, event=None):
         mode_map = {'Polygon': 'polygon', 'Arête': 'edge', 'Vertex': 'vertex'}
-        self.state.set_selection_mode(mode_map[self.sel_mode_var.get()])
+        new_mode = mode_map[self.sel_mode_var.get()]
+        self.state.set_selection_mode(new_mode)
+        if new_mode in ('vertex', 'edge'):
+            self.gizmo.mode = 'translate'
         self._sync_sel_mode_btns()
+        self._sync_gizmo_btns()
 
     def _handle_keyboard(self, key):
         if key == 't' and self.scene.selected_idx >= 0:
