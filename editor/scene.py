@@ -18,7 +18,7 @@ from OpenGL.GL import (
 
 from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
 from editor import math3d
-from editor.group import Group, Polygon, all_polygons, iter_polygons
+from editor.group import Group, all_polygons, iter_polygons
 
 
 # ── Vues plates (compatibilité avec gizmo.py et le reste) ─────────────────────
@@ -373,19 +373,20 @@ class Scene:
     # ── Sauvegarde ────────────────────────────────────────────────────────────
     def save_json(self, path):
         """Exporte la scène dans un fichier JSON hiérarchique."""
-        def serialize(node):
-            if isinstance(node, Polygon):
-                return {
-                    "vertices": [[round(v, 6) for v in vert] for vert in node.vertices],
-                    "uvs":      [[round(u, 6), round(v, 6)] for u, v in node.uvs],
-                }
-            else:
-                return {
-                    "name":     node.name,
-                    "children": [serialize(c) for c in node.children],
-                }
+        def serialize_group(g):
+            return {
+                "name":     g.name,
+                "groups":   [serialize_group(c) for c in g.children],
+                "polygons": [
+                    {
+                        "vertices": [[round(v, 6) for v in vert] for vert in p.vertices],
+                        "uvs":      [[round(u, 6), round(v, 6)] for u, v in p.uvs],
+                    }
+                    for p in g.polygons
+                ],
+            }
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"root": serialize(self.root)}, f, indent=2, ensure_ascii=False)
+            json.dump({"root": serialize_group(self.root)}, f, indent=2, ensure_ascii=False)
 
     def load_json(self, path):
         """Importe une scène depuis un fichier JSON (ajoute aux polygons existants)."""
@@ -395,19 +396,26 @@ class Scene:
         n_before = len(all_polygons(self.root))
 
         if "root" in data:
-            # Nouveau format hiérarchique
-            def load_node(node_data, parent):
-                if "vertices" in node_data:
+            def load_group(node_data, parent):
+                for p_data in node_data.get("polygons", []):
                     parent.add_polygon(
-                        [tuple(v) for v in node_data["vertices"]],
-                        [tuple(uv) for uv in node_data["uvs"]],
+                        [tuple(v) for v in p_data["vertices"]],
+                        [tuple(uv) for uv in p_data["uvs"]],
                     )
-                else:
-                    group = parent.add_group(node_data.get("name", "Groupe"))
-                    for child_data in node_data.get("children", []):
-                        load_node(child_data, group)
-            for child_data in data["root"].get("children", []):
-                load_node(child_data, self.root)
+                for g_data in node_data.get("groups", []):
+                    child = parent.add_group(g_data.get("name", "Groupe"))
+                    load_group(g_data, child)
+                # Rétrocompatibilité : ancien format avec "children" mixte
+                for child_data in node_data.get("children", []):
+                    if "vertices" in child_data:
+                        parent.add_polygon(
+                            [tuple(v) for v in child_data["vertices"]],
+                            [tuple(uv) for uv in child_data["uvs"]],
+                        )
+                    else:
+                        child = parent.add_group(child_data.get("name", "Groupe"))
+                        load_group(child_data, child)
+            load_group(data["root"], self.root)
 
         else:
             # Ancien format plat (rétrocompatibilité)
