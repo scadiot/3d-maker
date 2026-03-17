@@ -13,9 +13,10 @@ _SRC_MAX  = 1024   # résolution max de l'image source conservée en mémoire
 class UVSelector(tk.Frame):
     """Widget intégré dans le panneau gauche pour sélectionner une région UV dans l'atlas."""
 
-    def __init__(self, master, scene, **kw):
+    def __init__(self, master, scene, on_uv_assigned=None, **kw):
         super().__init__(master, bg='#1a1a21', **kw)
-        self._scene       = scene
+        self._scene            = scene
+        self._on_uv_assigned   = on_uv_assigned   # callback(polys_before) appelé après l'assignation
         self._src_img     = None   # image PIL source (ratio préservé)
         self._photo       = None   # PhotoImage courant (évite le GC)
         self._zoom        = 1.0
@@ -146,7 +147,15 @@ class UVSelector(tk.Frame):
         # Reprojection vers les coordonnées pixel de l'atlas
         atlas_x = int(img_x * self._scene.atlas_w / self._fit_w)
         atlas_y = int(img_y * self._scene.atlas_h / self._fit_h)
-        self._scene.assign_uv_at_atlas_pixel(atlas_x, atlas_y)
+        # Snapshot avant pour l'historique
+        if self._on_uv_assigned:
+            polys = self._scene._state.selected_polygons if self._scene._state else []
+            before = {p: (list(p.vertices), list(p.uvs)) for p in polys}
+            self._scene.assign_uv_at_atlas_pixel(atlas_x, atlas_y)
+            after = {p: (list(p.vertices), list(p.uvs)) for p in polys}
+            self._on_uv_assigned(before, after)
+        else:
+            self._scene.assign_uv_at_atlas_pixel(atlas_x, atlas_y)
 
     # ── Utilitaire ────────────────────────────────────────────────────────────
     def _clamp_pan(self):

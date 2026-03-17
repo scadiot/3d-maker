@@ -525,7 +525,8 @@ class App:
             return widget_factory(frame)
 
         self.uv_selector = _add_tab('UV Selector',
-                                    lambda f: UVSelector(f, self.scene))
+                                    lambda f: UVSelector(f, self.scene,
+                                                         on_uv_assigned=self._cmd_uv_assigned))
         self.uv_selector.pack(fill=tk.BOTH, expand=True)
 
         self.group_panel = _add_tab('Groupes',
@@ -784,6 +785,10 @@ class App:
             return
         self.history.push(DeletePolygonsCommand(self.state, saved))
         self.gizmo.stop_drag()
+
+    def _cmd_uv_assigned(self, before: dict, after: dict) -> None:
+        if before and any(before[p] != after.get(p) for p in before):
+            self.history.record(PolyDataCommand(self.state, before, after))
 
     def _cmd_rotate_uvs(self) -> None:
         polys = self.state.selected_polygons
