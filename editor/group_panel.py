@@ -20,11 +20,16 @@ class GroupPanel(tk.Frame):
         super().__init__(master, bg=self._BG)
         self._scene = scene
         self._app   = app
+        self._state = getattr(app, 'state', None)
         self._iid_to_obj: dict = {}
         self._drag_iids: list = []
         self._drag_objs: list = []
         self._drop_iid        = None
         self._syncing         = False
+        if self._state is not None:
+            self._state.subscribe('selection_changed', self._on_selection_changed)
+            self._state.subscribe('current_group_changed', self._on_current_group_changed)
+            self._state.subscribe('scene_changed', self._on_scene_changed)
         self._build()
 
     # ── Construction ──────────────────────────────────────────────────────────
@@ -103,6 +108,22 @@ class GroupPanel(tk.Frame):
         self._insert_group(self._scene.root, '')
         self.sync_selection(self._scene.selected_indices)
 
+    def _on_scene_changed(self, change_type: str, **kw):
+        """Abonné à StateManager.scene_changed — reconstruit le treeview."""
+        self.refresh()
+
+    def _on_selection_changed(self, polygons, edges, vertices, mode):
+        """Abonné à StateManager.selection_changed — met à jour le treeview."""
+        flat    = all_polygons(self._scene.root)
+        idx_map = {id(p): i for i, p in enumerate(flat)}
+        indices = {idx_map[id(p)] for p in polygons if id(p) in idx_map}
+        self.sync_selection(indices)
+
+    def _on_current_group_changed(self, group: Group):
+        """Abonné à StateManager.current_group_changed — met à jour la statusbar."""
+        if hasattr(self._app, '_update_statusbar'):
+            self._app._update_statusbar()
+
     def _insert_group(self, group: Group, parent_iid: str):
         text = '⬡ Scène' if group.is_root else f'▶ {group.name}'
         iid  = self._tree.insert(parent_iid, 'end', text=text, open=True)
@@ -135,8 +156,11 @@ class GroupPanel(tk.Frame):
                 parent_group = obj.group if obj.group else self._scene.root
         else:
             parent_group = self._scene.root
-        parent_group.add_group('Groupe')
-        self.refresh()
+        if self._state is not None:
+            self._state.add_group('Groupe', parent_group)
+        else:
+            parent_group.add_group('Groupe')
+            self.refresh()
 
     def _delete_selected(self, *_):
         """Supprime tous les groupes et polygones sélectionnés."""
@@ -165,17 +189,23 @@ class GroupPanel(tk.Frame):
         groups_to_delete = {o for o in objs if isinstance(o, Group)}
         filtered = [o for o in objs if not is_descendant(o, groups_to_delete)]
 
-        old_flat = all_polygons(self._scene.root)
-        for obj in filtered:
-            if isinstance(obj, Group):
-                if obj.parent is not None:
-                    obj.parent.remove_group(obj)
-            else:
-                if obj.group is not None:
-                    obj.group.remove_polygon(obj)
+        groups_to_del = [o for o in filtered if isinstance(o, Group)]
+        polys_to_del  = [o for o in filtered if isinstance(o, Polygon)]
 
-        self._scene._refresh_int_selections(old_flat)
-        self.refresh()
+        if self._state is not None:
+            for g in groups_to_del:
+                self._state.delete_group(g)
+            if polys_to_del:
+                self._state.delete_polygons(polys_to_del)
+        else:
+            for obj in filtered:
+                if isinstance(obj, Group):
+                    if obj.parent is not None:
+                        obj.parent.remove_group(obj)
+                else:
+                    if obj.group is not None:
+                        obj.group.remove_polygon(obj)
+            self.refresh()
         return 'break'
 
     # ── Drag & drop ───────────────────────────────────────────────────────────
@@ -232,7 +262,6 @@ class GroupPanel(tk.Frame):
         target_group = (target_obj if isinstance(target_obj, Group)
                         else (target_obj.group or self._scene.root))
 
-        old_flat = all_polygons(self._scene.root)
         moved = False
         for drag_obj in drag_objs:
             if isinstance(drag_obj, Group):
@@ -241,16 +270,21 @@ class GroupPanel(tk.Frame):
                     continue
                 if drag_obj.parent is target_group:
                     continue
-                target_group.adopt_group(drag_obj)
+                if self._state is not None:
+                    self._state.move_group(drag_obj, target_group)
+                else:
+                    target_group.adopt_group(drag_obj)
                 moved = True
             else:
                 if drag_obj.group is target_group:
                     continue
-                target_group.adopt_polygon(drag_obj)
+                if self._state is not None:
+                    self._state.move_polygon(drag_obj, target_group)
+                else:
+                    target_group.adopt_polygon(drag_obj)
                 moved = True
 
-        if moved:
-            self._scene._refresh_int_selections(old_flat)
+        if moved and self._state is None:
             self.refresh()
 
     def sync_selection(self, indices: set):
@@ -277,7 +311,10 @@ class GroupPanel(tk.Frame):
         # Si un groupe est sélectionné, il devient le current_group
         first_obj = self._iid_to_obj.get(sel[0])
         if isinstance(first_obj, Group):
-            self._app.current_group = first_obj
+            if self._state is not None:
+                self._state.set_current_group(first_obj)
+            else:
+                self._app.current_group = first_obj
             return
 
         flat    = all_polygons(self._scene.root)
@@ -326,10 +363,13 @@ class GroupPanel(tk.Frame):
 
         def commit(_event=None):
             new_name = entry_var.get().strip()
-            if new_name:
-                group.name = new_name
             entry.destroy()
-            self.refresh()
+            if new_name:
+                if self._state is not None:
+                    self._state.rename_group(group, new_name)
+                else:
+                    group.name = new_name
+                    self.refresh()
 
         def cancel(_event=None):
             entry.destroy()
@@ -360,9 +400,7 @@ class GroupPanel(tk.Frame):
         indices = {flat.index(p) for p in polys if p in flat}
         if not indices:
             return
-        self._scene.selected_indices = indices
-        self._scene.selected_idx     = max(indices)
-        self.sync_selection(indices)
+        self._scene.selected_indices = indices  # → StateManager → selection_changed → sync_selection()
 
     def _is_ancestor(self, group: Group, candidate: Group) -> bool:
         node = candidate

@@ -77,13 +77,7 @@ class Scene:
         self.polygons = _PolygonVertices(self.root)
         self.poly_uvs = _PolyUVs(self.root)
 
-        self.selected_idx     = -1
-        self.selected_indices = set()
-
-        self.selected_edges         = set()    # set de (poly_idx, edge_idx)
-        self.selected_edges_ordered = []       # même éléments, dans l'ordre de sélection
-
-        self.selected_vertices      = set()    # set de (poly_idx, vertex_idx)
+        self._state = None   # injecté par App après création du StateManager
 
         self.poly_texture  = 0
         self.atlas_w       = 1
@@ -92,6 +86,60 @@ class Scene:
 
         self.tex_preview_win = None
         self.tex_preview_sz  = 0
+
+    # ── Propriétés de compatibilité (délèguent au StateManager) ──────────────
+
+    @property
+    def selected_indices(self) -> set:
+        """Indices entiers des polygones sélectionnés (compatibilité gizmo/rendu)."""
+        if self._state is None:
+            return getattr(self, '_sel_indices_fb', set())
+        return set(self._state.selected_indices)
+
+    @selected_indices.setter
+    def selected_indices(self, value: set) -> None:
+        if self._state is None:
+            self._sel_indices_fb = set(value)
+            return
+        flat = all_polygons(self.root)
+        polys = [flat[i] for i in value if i < len(flat)]
+        self._state.set_selection(polygons=polys)
+
+    @property
+    def selected_edges(self) -> set:
+        """Arêtes sélectionnées sous forme d'indices entiers (compatibilité Gizmo)."""
+        if self._state is None:
+            return set()
+        flat     = all_polygons(self.root)
+        flat_idx = {id(p): i for i, p in enumerate(flat)}
+        return {(flat_idx[id(p)], ei)
+                for p, ei in self._state._selected_edges
+                if id(p) in flat_idx}
+
+    @property
+    def selected_vertices(self) -> set:
+        """Sommets sélectionnés sous forme d'indices entiers (compatibilité Gizmo)."""
+        if self._state is None:
+            return set()
+        flat     = all_polygons(self.root)
+        flat_idx = {id(p): i for i, p in enumerate(flat)}
+        return {(flat_idx[id(p)], vi)
+                for p, vi in self._state._selected_vertices
+                if id(p) in flat_idx}
+
+    @property
+    def selected_idx(self) -> int:
+        """Dernier polygone sélectionné (valeur dérivée de selected_indices)."""
+        if self._state is None:
+            return getattr(self, '_sel_idx_fb', -1)
+        indices = self._state.selected_indices
+        return indices[-1] if indices else -1
+
+    @selected_idx.setter
+    def selected_idx(self, value: int) -> None:
+        # Valeur dérivée — ignorée quand le StateManager est actif.
+        if self._state is None:
+            self._sel_idx_fb = value
 
     # ── Chargement ────────────────────────────────────────────────────────────
     def load_atlas(self, json_path):
@@ -112,6 +160,11 @@ class Scene:
         self.atlas_w, self.atlas_h = w, h
 
     # ── Gestion des polygons ──────────────────────────────────────────────────
+    def _emit_scene_changed(self, change_type: str, **kw) -> None:
+        """Notifie le StateManager d'un changement structurel de la scène."""
+        if self._state is not None:
+            self._state._emit("scene_changed", change_type=change_type, **kw)
+
     def _select_new_polygon(self, new_poly):
         """Sélectionne un polygone nouvellement créé."""
         flat = all_polygons(self.root)
@@ -132,6 +185,7 @@ class Scene:
             [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)],
         )
         self._select_new_polygon(new_poly)
+        self._emit_scene_changed("polygon_added", polygon=new_poly, group=target)
 
     def add_triangle(self, cam_pos, cam_yaw, group=None):
         import math as _math
@@ -146,6 +200,7 @@ class Scene:
             [(0.5, 0.0), (1.0, 1.0), (0.0, 1.0)],
         )
         self._select_new_polygon(new_poly)
+        self._emit_scene_changed("polygon_added", polygon=new_poly, group=target)
 
     def rotate_uvs(self):
         """Décale circulairement les UVs des polygons sélectionnés (v0→v1, v1→v2, …)."""
@@ -165,27 +220,8 @@ class Scene:
                 poly.uvs      = list(reversed(poly.uvs))
 
     def delete_selected(self):
-        flat         = all_polygons(self.root)
-        deleted_set  = set(self.selected_indices)
-        sorted_del   = sorted(deleted_set)
-
-        # Recalculer les sélections d'arêtes et de sommets (encore en int)
-        new_edges = set()
-        for poly_idx, edge_idx in self.selected_edges:
-            if poly_idx in deleted_set:
-                continue
-            shift = sum(1 for d in sorted_del if d < poly_idx)
-            new_edges.add((poly_idx - shift, edge_idx))
-        self.selected_edges         = new_edges
-        self.selected_edges_ordered = [e for e in self.selected_edges_ordered if e in new_edges]
-
-        new_verts = set()
-        for poly_idx, vert_idx in self.selected_vertices:
-            if poly_idx in deleted_set:
-                continue
-            shift = sum(1 for d in sorted_del if d < poly_idx)
-            new_verts.add((poly_idx - shift, vert_idx))
-        self.selected_vertices = new_verts
+        flat       = all_polygons(self.root)
+        sorted_del = sorted(self.selected_indices)
 
         # Supprimer les polygones de l'arbre
         for i in sorted_del:
@@ -199,8 +235,9 @@ class Scene:
             if isinstance(child, Group) and not all_polygons(child):
                 self.root.children.remove(child)
 
-        self.selected_idx     = -1
-        self.selected_indices = set()
+        if self._state is not None:
+            self._state.clear_selection()
+        self._emit_scene_changed("polygons_deleted")
 
     def duplicate_selected(self):
         if not self.selected_indices:
@@ -220,6 +257,7 @@ class Scene:
         new_indices = {flat_after.index(p) for p in new_polys}
         self.selected_indices = new_indices
         self.selected_idx     = max(new_indices) if new_indices else -1
+        self._emit_scene_changed("polygon_added")
 
     # ── Sélection ─────────────────────────────────────────────────────────────
     def selection_center(self):
@@ -294,81 +332,24 @@ class Scene:
 
     def group_selected(self):
         """Groupe les polygons sélectionnés (minimum 2) dans un nouveau sous-groupe."""
-        if len(self.selected_indices) < 2:
+        polys_to_group = self._state.selected_polygons if self._state else []
+        if len(polys_to_group) < 2:
             return
-        old_flat       = all_polygons(self.root)
-        polys_to_group = [old_flat[i] for i in sorted(self.selected_indices)
-                          if i < len(old_flat)]
-
         new_group = self.root.add_group("Groupe")
         for poly in polys_to_group:
             new_group.adopt(poly)
-
-        self._refresh_int_selections(old_flat)
+        self._emit_scene_changed("group_added", group=new_group, parent=self.root)
 
     def ungroup_selected(self):
         """Dissocie les sous-groupes contenant des polygons sélectionnés."""
-        old_flat = all_polygons(self.root)
-
-        groups_to_dissolve = set()
-        for i in self.selected_indices:
-            if i < len(old_flat):
-                poly = old_flat[i]
-                if poly.group is not self.root:
-                    groups_to_dissolve.add(poly.group)
-
+        polys = self._state.selected_polygons if self._state else []
+        groups_to_dissolve = {p.group for p in polys if p.group is not self.root}
         for group in groups_to_dissolve:
             for child in list(group.children):
                 self.root.adopt(child)
             if group in self.root.children:
                 self.root.children.remove(group)
-
-        self._refresh_int_selections(old_flat)
-
-    def _refresh_int_selections(self, old_flat):
-        """Recalcule toutes les sélections entières après un changement d'ordre dans l'arbre."""
-        new_flat        = all_polygons(self.root)
-        poly_to_new_idx = {id(p): i for i, p in enumerate(new_flat)}
-
-        # selected_indices
-        new_sel = set()
-        for i in self.selected_indices:
-            if i < len(old_flat):
-                new_i = poly_to_new_idx.get(id(old_flat[i]))
-                if new_i is not None:
-                    new_sel.add(new_i)
-        self.selected_indices = new_sel
-
-        # selected_idx
-        if 0 <= self.selected_idx < len(old_flat):
-            self.selected_idx = poly_to_new_idx.get(id(old_flat[self.selected_idx]), -1)
-        else:
-            self.selected_idx = -1
-
-        # selected_edges
-        new_edges = set()
-        new_edges_ordered = []
-        for pi, ei in self.selected_edges:
-            if pi < len(old_flat):
-                new_pi = poly_to_new_idx.get(id(old_flat[pi]))
-                if new_pi is not None:
-                    new_edges.add((new_pi, ei))
-        for pi, ei in self.selected_edges_ordered:
-            if pi < len(old_flat):
-                new_pi = poly_to_new_idx.get(id(old_flat[pi]))
-                if new_pi is not None:
-                    new_edges_ordered.append((new_pi, ei))
-        self.selected_edges         = new_edges
-        self.selected_edges_ordered = new_edges_ordered
-
-        # selected_vertices
-        new_verts = set()
-        for pi, vi in self.selected_vertices:
-            if pi < len(old_flat):
-                new_pi = poly_to_new_idx.get(id(old_flat[pi]))
-                if new_pi is not None:
-                    new_verts.add((new_pi, vi))
-        self.selected_vertices = new_verts
+        self._emit_scene_changed("group_deleted")
 
     # ── Sauvegarde ────────────────────────────────────────────────────────────
     def save_json(self, path):
@@ -443,29 +424,35 @@ class Scene:
         if new_indices:
             self.selected_indices = new_indices
             self.selected_idx     = max(new_indices)
+        self._emit_scene_changed("polygons_added")
 
     # ── Opérations sur arêtes ─────────────────────────────────────────────────
     def rapprocher_edges(self):
         """Déplace le second polygon pour aligner le centre de son arête sur celui du premier."""
-        if len(self.selected_edges_ordered) != 2:
+        if self._state is None:
             return
-        e1, e2   = self.selected_edges_ordered
-        qi1, ei1 = e1
-        qi2, ei2 = e2
-        q1, q2   = self.polygons[qi1], self.polygons[qi2]
+        edges = self._state.selected_edges
+        if len(edges) != 2:
+            return
+        poly1, ei1 = edges[0]
+        poly2, ei2 = edges[1]
+        q1 = poly1.vertices
+        q2 = poly2.vertices
         c1 = math3d.vscale(math3d.vadd(tuple(q1[ei1]), tuple(q1[(ei1+1) % len(q1)])), 0.5)
         c2 = math3d.vscale(math3d.vadd(tuple(q2[ei2]), tuple(q2[(ei2+1) % len(q2)])), 0.5)
         delta = math3d.vsub(c1, c2)
-        self.polygons[qi2] = [math3d.vadd(tuple(v), delta) for v in q2]
+        poly2.vertices = [math3d.vadd(tuple(v), delta) for v in q2]
 
     def create_polygon_from_edges(self, group=None):
         """Crée un nouveau polygon (quad) en reliant les deux arêtes sélectionnées."""
-        if len(self.selected_edges_ordered) != 2:
+        if self._state is None:
             return
-        e1, e2   = self.selected_edges_ordered
-        qi1, ei1 = e1
-        qi2, ei2 = e2
-        q1, q2   = self.polygons[qi1], self.polygons[qi2]
+        edges = self._state.selected_edges
+        if len(edges) != 2:
+            return
+        poly1, ei1 = edges[0]
+        poly2, ei2 = edges[1]
+        q1, q2 = poly1.vertices, poly2.vertices
         a = tuple(q1[ei1])
         b = tuple(q1[(ei1 + 1) % len(q1)])
         c = tuple(q2[(ei2 + 1) % len(q2)])
@@ -493,6 +480,7 @@ class Scene:
         quad_uvs = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
         target = group if group is not None else self.root
         target.add_polygon(unique, quad_uvs[:len(unique)])
+        self._emit_scene_changed("polygon_added", group=target)
 
     # ── Aperçu texture ────────────────────────────────────────────────────────
     def open_tex_preview(self, root_tk):
@@ -545,18 +533,23 @@ class Scene:
 
     # ── Rendu ─────────────────────────────────────────────────────────────────
     def draw(self):
-        # Indices nécessaires pour les arêtes/sommets sélectionnés
-        needed = ({pi for pi, _ in self.selected_edges} |
-                  {pi for pi, _ in self.selected_vertices})
-        indexed = {}  # {poly_idx: vertices} collecté pendant la passe principale
+        sel_indices = self.selected_indices   # cache avant la boucle (évite O(n²))
+        sel_edges = self._state.selected_edges if self._state else []
+        sel_verts = self._state.selected_vertices if self._state else []
+
+        # Polygones avec arêtes/sommets sélectionnés (pour rendu post-boucle)
+        edge_poly_ids = {id(p) for p, _ in sel_edges}
+        vert_poly_ids = {id(p) for p, _ in sel_verts}
+        needed_ids    = edge_poly_ids | vert_poly_ids
+        poly_verts_by_id = {}  # {id(poly_obj): vertices}
 
         glEnable(GL_CULL_FACE);  glCullFace(GL_BACK);  glFrontFace(GL_CW)
         for i, poly_obj in enumerate(iter_polygons(self.root)):
             poly = poly_obj.vertices
             uvs  = poly_obj.uvs
-            sel  = (i in self.selected_indices)
-            if i in needed:
-                indexed[i] = poly
+            sel  = (i in sel_indices)
+            if id(poly_obj) in needed_ids:
+                poly_verts_by_id[id(poly_obj)] = poly
             glEnable(GL_TEXTURE_2D);  glBindTexture(GL_TEXTURE_2D, self.poly_texture)
             glColor3f(1.0, 1.0, 1.0)
             glBegin(GL_TRIANGLE_FAN)
@@ -580,23 +573,23 @@ class Scene:
                 glDisable(GL_BLEND)
         glLineWidth(1.0)
         glDisable(GL_CULL_FACE)
-        if self.selected_edges:
+        if sel_edges:
             glLineWidth(4.0)
             glColor3f(0.05, 0.05, 1.0)
             glBegin(GL_LINES)
-            for poly_idx, edge_idx in self.selected_edges:
-                p = indexed.get(poly_idx)
+            for poly_ref, edge_idx in sel_edges:
+                p = poly_verts_by_id.get(id(poly_ref))
                 if p is not None:
                     glVertex3f(*p[edge_idx])
                     glVertex3f(*p[(edge_idx + 1) % len(p)])
             glEnd()
             glLineWidth(1.0)
-        if self.selected_vertices:
+        if sel_verts:
             glPointSize(8.0)
             glColor3f(0.05, 1.0, 0.3)
             glBegin(GL_POINTS)
-            for poly_idx, vert_idx in self.selected_vertices:
-                p = indexed.get(poly_idx)
+            for poly_ref, vert_idx in sel_verts:
+                p = poly_verts_by_id.get(id(poly_ref))
                 if p is not None and vert_idx < len(p):
                     glVertex3f(*p[vert_idx])
             glEnd()

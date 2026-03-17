@@ -25,12 +25,14 @@ _PANEL_MAX_WIDTH     = 700
 _TOTAL_CONTENT_WIDTH = PANEL_WIDTH + VIEW_WIDTH
 
 SNAP_VALUES = ["1", "0.5", "0.25", "0.1", "0.05", "0.01"]
-from editor.camera       import Camera
-from editor.scene        import Scene
-from editor.gizmo        import Gizmo
-from editor.renderer     import draw_grid
-from editor.uv_selector  import UVSelector
-from editor.group_panel  import GroupPanel
+from editor.camera        import Camera
+from editor.scene         import Scene
+from editor.gizmo         import Gizmo
+from editor.renderer      import draw_grid
+from editor.uv_selector   import UVSelector
+from editor.group_panel   import GroupPanel
+from editor.state_manager import StateManager
+from editor.group         import all_polygons
 
 
 class Viewport3D(OpenGLFrame):
@@ -53,9 +55,9 @@ class App:
     def __init__(self):
         self.camera         = Camera()
         self.scene          = Scene()
-        self.current_group  = self.scene.root
+        self.state          = StateManager(self.scene.root)
+        self.scene._state   = self.state           # injection du StateManager dans Scene
         self.gizmo          = Gizmo()
-        self.selection_mode = 'polygon'
         self.panel_width    = PANEL_WIDTH
         self.panning        = False
         self.pan_last_x     = 0
@@ -86,6 +88,8 @@ class App:
         self._build_resize_bar()
         self._build_viewport()
         self._bind_events()
+
+        self.state.subscribe('selection_changed', lambda **_: self._sync_toolbar2_btns())
 
         self.scene.load_atlas(ATLAS_JSON)
         self.viewport.animate = 1
@@ -128,9 +132,9 @@ class App:
         # ── Polygon ───────────────────────────────────────────────────────────
         m_poly = tk.Menu(menubar, tearoff=0)
         m_poly.add_command(label="Ajouter polygon",
-                           command=lambda: self.scene.add_polygon(self.camera.pos, self.camera.yaw, self.current_group))
+                           command=lambda: self.scene.add_polygon(self.camera.pos, self.camera.yaw, self.state.current_group))
         m_poly.add_command(label="Ajouter triangle",
-                           command=lambda: self.scene.add_triangle(self.camera.pos, self.camera.yaw, self.current_group))
+                           command=lambda: self.scene.add_triangle(self.camera.pos, self.camera.yaw, self.state.current_group))
         m_poly.add_separator()
         m_poly.add_command(label="Inverser orientation", accelerator="N",
                            command=self.scene.flip_orientation)
@@ -140,7 +144,7 @@ class App:
         m_poly.add_command(label="Rapprocher arêtes",
                            command=self.scene.rapprocher_edges)
         m_poly.add_command(label="Créer polygon depuis arêtes",
-                           command=lambda: (self.scene.create_polygon_from_edges(self.current_group), self._refresh_group_panel()))
+                           command=lambda: self.scene.create_polygon_from_edges(self.state.current_group))
         menubar.add_cascade(label="Polygon", menu=m_poly)
 
         self.root.config(menu=menubar)
@@ -311,25 +315,25 @@ class App:
         add_btn(make_icon(ico_load),      self._load_json_dialog,  "Charger")
         add_sep()
         add_btn(make_icon(ico_polygon),
-                lambda: (self.scene.add_polygon(self.camera.pos, self.camera.yaw, self.current_group), self._refresh_group_panel()),
+                lambda: self.scene.add_polygon(self.camera.pos, self.camera.yaw, self.state.current_group),
                 "Polygon")
         add_btn(make_icon(ico_triangle),
-                lambda: (self.scene.add_triangle(self.camera.pos, self.camera.yaw, self.current_group), self._refresh_group_panel()),
+                lambda: self.scene.add_triangle(self.camera.pos, self.camera.yaw, self.state.current_group),
                 "Triangle")
         add_sep()
         add_btn(make_icon(ico_duplicate),
-                lambda: (self.scene.duplicate_selected(), self._refresh_group_panel()),
+                lambda: self.scene.duplicate_selected(),
                 "Dupliquer", "C")
         add_btn(make_icon(ico_delete),
-                lambda: (self.scene.delete_selected(), self.gizmo.stop_drag(), self._refresh_group_panel())
+                lambda: (self.scene.delete_selected(), self.gizmo.stop_drag())
                 if self.scene.selected_indices else None,
                 "Supprimer", "Suppr")
         add_sep()
         add_btn(make_icon(ico_group),
-                lambda: (self.scene.group_selected(), self._refresh_group_panel()),
+                lambda: self.scene.group_selected(),
                 "Grouper", "G")
         add_btn(make_icon(ico_ungroup),
-                lambda: (self.scene.ungroup_selected(), self._refresh_group_panel()),
+                lambda: self.scene.ungroup_selected(),
                 "Dégrouper", "H")
         add_sep()
 
@@ -413,7 +417,7 @@ class App:
         self._sep_edges.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
         self._btn_rapprocher = add_btn(self.scene.rapprocher_edges,
                                        "Rapprocher arêtes")
-        self._btn_create_from_edges = add_btn(lambda: (self.scene.create_polygon_from_edges(self.current_group), self._refresh_group_panel()),
+        self._btn_create_from_edges = add_btn(lambda: self.scene.create_polygon_from_edges(self.state.current_group),
                                               "Créer polygon depuis arêtes")
         self._sync_toolbar2_btns()
 
@@ -423,7 +427,7 @@ class App:
         self.gizmo.scale_snap     = v
 
     def _sync_toolbar2_btns(self):
-        two_edges = len(self.scene.selected_edges_ordered) == 2
+        two_edges = len(self.state.selected_edges) == 2
         widgets = [self._sep_edges, self._btn_rapprocher, self._btn_create_from_edges]
         for w in widgets:
             if two_edges:
@@ -443,7 +447,7 @@ class App:
 
     def _sync_sel_mode_btns(self):
         for mode, (btn, bg_off, bg_on) in self._sel_btns.items():
-            btn.config(bg=bg_on if self.selection_mode == mode else bg_off)
+            btn.config(bg=bg_on if self.state.selection_mode == mode else bg_off)
 
     # ── Construction de l'interface ───────────────────────────────────────────
     def _build_panel(self):
@@ -548,14 +552,14 @@ class App:
             sel_text = f'{n} polygons sélectionnés'
         self._status_sel_lbl.config(text=sel_text)
 
-        grp = self.current_group
+        grp = self.state.current_group
         grp_name = getattr(grp, 'name', None) or 'Racine'
         self._status_group_lbl.config(text=f'Groupe : {grp_name}')
 
         mode_labels = {'translate': 'Translater', 'rotate': 'Rotation', 'scale': 'Échelle'}
         sel_mode_labels = {'polygon': 'Polygon', 'edge': 'Arête', 'vertex': 'Vertex'}
         right = (f"Gizmo : {mode_labels.get(self.gizmo.mode, self.gizmo.mode)}   "
-                 f"Mode : {sel_mode_labels.get(self.selection_mode, self.selection_mode)}")
+                 f"Mode : {sel_mode_labels.get(self.state.selection_mode, self.state.selection_mode)}")
         self._status_right_lbl.config(text=right)
 
     def _build_resize_bar(self):
@@ -668,14 +672,8 @@ class App:
 
     def _on_selection_mode_change(self, event=None):
         mode_map = {'Polygon': 'polygon', 'Arête': 'edge', 'Vertex': 'vertex'}
-        self.selection_mode = mode_map[self.sel_mode_var.get()]
-        if self.selection_mode != 'edge':
-            self.scene.selected_edges.clear()
-            self.scene.selected_edges_ordered.clear()
-        if self.selection_mode != 'vertex':
-            self.scene.selected_vertices.clear()
+        self.state.set_selection_mode(mode_map[self.sel_mode_var.get()])
         self._sync_sel_mode_btns()
-        self._sync_toolbar2_btns()
 
     def _handle_keyboard(self, key):
         if key == 't' and self.scene.selected_idx >= 0:
@@ -687,11 +685,9 @@ class App:
         if key == 'delete' and self.scene.selected_indices:
             self.scene.delete_selected()
             self.gizmo.stop_drag()
-            self._refresh_group_panel()
 
         if key == 'c':
             self.scene.duplicate_selected()
-            self._refresh_group_panel()
 
         if key == 'space' and self.scene.selected_indices:
             self.gizmo.cycle_mode(len(self.scene.selected_indices) > 1)
@@ -699,11 +695,9 @@ class App:
 
         if key == 'g' and len(self.scene.selected_indices) >= 2:
             self.scene.group_selected()
-            self._refresh_group_panel()
 
         if key == 'h' and self.scene.selected_indices:
             self.scene.ungroup_selected()
-            self._refresh_group_panel()
 
         if key == 'r' and self.scene.selected_indices:
             self.scene.rotate_uvs()
@@ -713,7 +707,7 @@ class App:
 
         if key == 'e':
             modes = ['polygon', 'edge', 'vertex']
-            next_mode = modes[(modes.index(self.selection_mode) + 1) % len(modes)]
+            next_mode = modes[(modes.index(self.state.selection_mode) + 1) % len(modes)]
             self.sel_mode_var.set({'polygon': 'Polygon', 'edge': 'Arête', 'vertex': 'Vertex'}[next_mode])
             self._on_selection_mode_change()
 
@@ -731,8 +725,9 @@ class App:
     def _handle_mouse_down_3d(self, mx, my):
         ctrl_held = 'shift_l' in self.keys_pressed
         multi     = len(self.scene.selected_indices) > 1
+        sel_mode  = self.state.selection_mode
 
-        if self.selection_mode == 'edge' and self.scene.selected_edges:
+        if sel_mode == 'edge' and self.state.selected_edges:
             axis = self.gizmo.pick_translate_axis(mx, my, self.scene, self.camera)
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
@@ -740,7 +735,7 @@ class App:
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             return
 
-        if self.selection_mode == 'vertex' and self.scene.selected_vertices:
+        if sel_mode == 'vertex' and self.state.selected_vertices:
             axis = self.gizmo.pick_translate_axis(mx, my, self.scene, self.camera)
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
@@ -748,7 +743,7 @@ class App:
                 self._apply_vertex_selection(self._pick_vertex(mx, my), ctrl_held)
             return
 
-        if self.selection_mode == 'vertex':
+        if sel_mode == 'vertex':
             self._apply_vertex_selection(self._pick_vertex(mx, my), ctrl_held)
             return
 
@@ -756,7 +751,7 @@ class App:
             axis = self.gizmo.pick_translate_axis(mx, my, self.scene, self.camera)
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
-            elif self.selection_mode == 'edge':
+            elif sel_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
@@ -765,23 +760,19 @@ class App:
             axis = self.gizmo.pick_rotate_axis(mx, my, self.scene, self.camera)
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
-            elif self.selection_mode == 'edge':
+            elif sel_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
-                if len(self.scene.selected_indices) <= 1:
-                    self.gizmo.mode = 'translate'
 
         else:  # scale
             handle = self.gizmo.pick_scale_handle(mx, my, self.scene, self.camera)
             if handle:
                 self.gizmo.start_drag(handle, mx, my, self.scene, self.camera)
-            elif self.selection_mode == 'edge':
+            elif sel_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
-                if len(self.scene.selected_indices) <= 1:
-                    self.gizmo.mode = 'translate'
 
     def _save_json_dialog(self):
         path = filedialog.asksaveasfilename(
@@ -802,7 +793,6 @@ class App:
         if path:
             self.scene.load_json(path)
             self.gizmo.stop_drag()
-            self._refresh_group_panel()
 
     def _pick_polygon(self, mx, my):
         return self.scene.pick_polygon(tuple(self.camera.pos), self.camera.screen_ray(mx, my))
@@ -816,49 +806,60 @@ class App:
     def _apply_vertex_selection(self, vertex, ctrl_held):
         if vertex is None:
             if not ctrl_held:
-                self.scene.selected_vertices.clear()
+                self.state.set_selection(vertices=[])
             return
+        flat = all_polygons(self.scene.root)
+        poly_idx, vert_idx = vertex
+        if poly_idx >= len(flat):
+            return
+        vert_ref = (flat[poly_idx], vert_idx)
+        current = list(self.state.selected_vertices)
         if ctrl_held:
-            if vertex in self.scene.selected_vertices:
-                self.scene.selected_vertices.discard(vertex)
+            if vert_ref in current:
+                current.remove(vert_ref)
             else:
-                self.scene.selected_vertices.add(vertex)
+                current.append(vert_ref)
+            self.state.set_selection(vertices=current)
         else:
-            self.scene.selected_vertices = {vertex}
+            self.state.set_selection(vertices=[vert_ref])
 
     def _apply_edge_selection(self, edge, ctrl_held):
         if edge is None:
             if not ctrl_held:
-                self.scene.selected_edges.clear()
-                self.scene.selected_edges_ordered.clear()
-        elif ctrl_held:
-            if edge in self.scene.selected_edges:
-                self.scene.selected_edges.discard(edge)
-                self.scene.selected_edges_ordered.remove(edge)
+                self.state.set_selection(edges=[])
+            return
+        flat = all_polygons(self.scene.root)
+        poly_idx, edge_idx = edge
+        if poly_idx >= len(flat):
+            return
+        edge_ref = (flat[poly_idx], edge_idx)
+        current = list(self.state.selected_edges)
+        if ctrl_held:
+            if edge_ref in current:
+                current.remove(edge_ref)
             else:
-                self.scene.selected_edges.add(edge)
-                self.scene.selected_edges_ordered.append(edge)
+                current.append(edge_ref)
+            self.state.set_selection(edges=current)
         else:
-            self.scene.selected_edges = {edge}
-            self.scene.selected_edges_ordered = [edge]
-        self._sync_toolbar2_btns()
+            self.state.set_selection(edges=[edge_ref])
 
     def _apply_selection(self, clicked_idx, ctrl_held):
-        """Applique la sélection selon Ctrl."""
+        """Applique la sélection selon Ctrl — passe par le StateManager."""
+        flat = all_polygons(self.scene.root)
         if ctrl_held:
-            if clicked_idx >= 0:
-                if clicked_idx in self.scene.selected_indices:
-                    self.scene.selected_indices.discard(clicked_idx)
-                    self.scene.selected_idx = next(iter(self.scene.selected_indices), -1)
+            if clicked_idx >= 0 and clicked_idx < len(flat):
+                poly    = flat[clicked_idx]
+                current = list(self.state._selected_polygons)
+                if poly in current:
+                    current.remove(poly)
                 else:
-                    self.scene.selected_indices.add(clicked_idx)
-                    self.scene.selected_idx = clicked_idx
+                    current.append(poly)
+                self.state.set_selection(polygons=current)
         else:
-            self.scene.selected_idx     = clicked_idx
-            self.scene.selected_indices = {clicked_idx} if clicked_idx >= 0 else set()
-
-        if hasattr(self, 'group_panel'):
-            self.group_panel.sync_selection(self.scene.selected_indices)
+            if clicked_idx >= 0 and clicked_idx < len(flat):
+                self.state.set_selection(polygons=[flat[clicked_idx]])
+            else:
+                self.state.clear_selection()
 
     # ── Mise à jour ───────────────────────────────────────────────────────────
     def _update_loop(self):
