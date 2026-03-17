@@ -112,17 +112,26 @@ class Scene:
         self.atlas_w, self.atlas_h = w, h
 
     # ── Gestion des polygons ──────────────────────────────────────────────────
+    def _select_new_polygon(self, new_poly):
+        """Sélectionne un polygone nouvellement créé."""
+        flat = all_polygons(self.root)
+        idx = next((i for i, p in enumerate(flat) if p is new_poly), -1)
+        if idx >= 0:
+            self.selected_indices = {idx}
+            self.selected_idx     = idx
+
     def add_polygon(self, cam_pos, cam_yaw, group=None):
         import math as _math
         yr = _math.radians(cam_yaw)
         cx = round(cam_pos[0] - _math.sin(yr)*5)
         cz = round(cam_pos[2] - _math.cos(yr)*5)
         target = group if group is not None else self.root
-        target.add_polygon(
+        new_poly = target.add_polygon(
             [(cx-1, 0.0, cz-1), (cx+1, 0.0, cz-1),
              (cx+1, 0.0, cz+1), (cx-1, 0.0, cz+1)],
             [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)],
         )
+        self._select_new_polygon(new_poly)
 
     def add_triangle(self, cam_pos, cam_yaw, group=None):
         import math as _math
@@ -130,12 +139,13 @@ class Scene:
         cx = round(cam_pos[0] - _math.sin(yr)*5)
         cz = round(cam_pos[2] - _math.cos(yr)*5)
         target = group if group is not None else self.root
-        target.add_polygon(
+        new_poly = target.add_polygon(
             [(cx,   0.0, cz-1),
              (cx+1, 0.0, cz+1),
              (cx-1, 0.0, cz+1)],
             [(0.5, 0.0), (1.0, 1.0), (0.0, 1.0)],
         )
+        self._select_new_polygon(new_poly)
 
     def rotate_uvs(self):
         """Décale circulairement les UVs des polygons sélectionnés (v0→v1, v1→v2, …)."""
@@ -195,19 +205,19 @@ class Scene:
     def duplicate_selected(self):
         if not self.selected_indices:
             return
-        flat     = all_polygons(self.root)
-        n_before = len(flat)
+        flat      = all_polygons(self.root)
+        new_polys = []
 
         for i in sorted(self.selected_indices):
             if i < len(flat):
                 poly = flat[i]
-                poly.group.add_polygon(
+                new_polys.append(poly.group.add_polygon(
                     copy.deepcopy(poly.vertices),
                     list(poly.uvs),
-                )
+                ))
 
-        n_after     = len(all_polygons(self.root))
-        new_indices = set(range(n_before, n_after))
+        flat_after  = all_polygons(self.root)
+        new_indices = {flat_after.index(p) for p in new_polys}
         self.selected_indices = new_indices
         self.selected_idx     = max(new_indices) if new_indices else -1
 

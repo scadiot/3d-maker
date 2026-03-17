@@ -100,6 +100,7 @@ class GroupPanel(tk.Frame):
         for iid in self._tree.get_children():
             self._tree.delete(iid)
         self._insert_group(self._scene.root, '')
+        self.sync_selection(self._scene.selected_indices)
 
     def _insert_group(self, group: Group, parent_iid: str):
         text = '⬡ Scène' if group.is_root else f'▶ {group.name}'
