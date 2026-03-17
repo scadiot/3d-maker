@@ -323,7 +323,7 @@ class Scene:
             return
         new_group = self.root.add_group("Groupe")
         for poly in polys_to_group:
-            new_group.adopt(poly)
+            new_group.adopt_polygon(poly)
         self._emit_scene_changed("group_added", group=new_group, parent=self.root)
 
     def ungroup_selected(self):
@@ -331,10 +331,13 @@ class Scene:
         polys = self._state.selected_polygons if self._state else []
         groups_to_dissolve = {p.group for p in polys if p.group is not self.root}
         for group in groups_to_dissolve:
+            parent = group.parent if group.parent is not None else self.root
+            for poly in list(group.polygons):
+                parent.adopt_polygon(poly)
             for child in list(group.children):
-                self.root.adopt(child)
-            if group in self.root.children:
-                self.root.children.remove(group)
+                parent.adopt_group(child)
+            if group in parent.children:
+                parent.remove_group(group)
         self._emit_scene_changed("group_deleted")
 
     # ── Sauvegarde ────────────────────────────────────────────────────────────

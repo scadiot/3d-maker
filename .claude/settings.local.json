@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(pip install:*)",
-      "Bash(python -m pytest tests/test_state_manager.py -v)"
+      "Bash(python -m pytest tests/test_state_manager.py -v)",
+      "Bash(python -m pytest tests/ -q)"
     ]
   }
 }

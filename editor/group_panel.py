@@ -157,7 +157,11 @@ class GroupPanel(tk.Frame):
         else:
             parent_group = self._scene.root
         if self._state is not None:
-            self._state.add_group('Groupe', parent_group)
+            new_group = self._state.add_group('Groupe', parent_group)
+            history = getattr(self._app, 'history', None)
+            if history is not None:
+                from editor.history import AddGroupCommand
+                history.record(AddGroupCommand(self._state, new_group, parent_group))
         else:
             parent_group.add_group('Groupe')
             self.refresh()
@@ -193,10 +197,23 @@ class GroupPanel(tk.Frame):
         polys_to_del  = [o for o in filtered if isinstance(o, Polygon)]
 
         if self._state is not None:
-            for g in groups_to_del:
-                self._state.delete_group(g)
-            if polys_to_del:
-                self._state.delete_polygons(polys_to_del)
+            history = getattr(self._app, 'history', None)
+            if history is not None:
+                from editor.history import (DeleteGroupCommand, DeletePolygonsCommand,
+                                            CompoundCommand)
+                cmds = [DeleteGroupCommand(self._state, g) for g in groups_to_del]
+                if polys_to_del:
+                    saved = [(p, p.group, p.group.polygons.index(p))
+                             for p in polys_to_del if p.group is not None]
+                    if saved:
+                        cmds.append(DeletePolygonsCommand(self._state, saved))
+                if cmds:
+                    history.push(CompoundCommand(cmds) if len(cmds) > 1 else cmds[0])
+            else:
+                for g in groups_to_del:
+                    self._state.delete_group(g)
+                if polys_to_del:
+                    self._state.delete_polygons(polys_to_del)
         else:
             for obj in filtered:
                 if isinstance(obj, Group):
@@ -263,6 +280,8 @@ class GroupPanel(tk.Frame):
                         else (target_obj.group or self._scene.root))
 
         moved = False
+        history = getattr(self._app, 'history', None)
+        move_cmds = []
         for drag_obj in drag_objs:
             if isinstance(drag_obj, Group):
                 # Anti-cycle : pas de déplacement dans soi-même ou ses descendants
@@ -271,7 +290,13 @@ class GroupPanel(tk.Frame):
                 if drag_obj.parent is target_group:
                     continue
                 if self._state is not None:
-                    self._state.move_group(drag_obj, target_group)
+                    if history is not None:
+                        from editor.history import MoveGroupCommand
+                        old_parent = drag_obj.parent
+                        move_cmds.append(MoveGroupCommand(self._state, drag_obj,
+                                                          old_parent, target_group))
+                    else:
+                        self._state.move_group(drag_obj, target_group)
                 else:
                     target_group.adopt_group(drag_obj)
                 moved = True
@@ -279,12 +304,21 @@ class GroupPanel(tk.Frame):
                 if drag_obj.group is target_group:
                     continue
                 if self._state is not None:
-                    self._state.move_polygon(drag_obj, target_group)
+                    if history is not None:
+                        from editor.history import MovePolygonCommand
+                        old_group = drag_obj.group
+                        move_cmds.append(MovePolygonCommand(self._state, drag_obj,
+                                                            old_group, target_group))
+                    else:
+                        self._state.move_polygon(drag_obj, target_group)
                 else:
                     target_group.adopt_polygon(drag_obj)
                 moved = True
 
-        if moved and self._state is None:
+        if move_cmds:
+            from editor.history import CompoundCommand
+            history.push(CompoundCommand(move_cmds) if len(move_cmds) > 1 else move_cmds[0])
+        elif moved and self._state is None:
             self.refresh()
 
     def sync_selection(self, indices: set):
@@ -364,9 +398,16 @@ class GroupPanel(tk.Frame):
         def commit(_event=None):
             new_name = entry_var.get().strip()
             entry.destroy()
-            if new_name:
+            if new_name and new_name != group.name:
                 if self._state is not None:
-                    self._state.rename_group(group, new_name)
+                    old_name = group.name
+                    history = getattr(self._app, 'history', None)
+                    if history is not None:
+                        from editor.history import RenameGroupCommand
+                        history.push(RenameGroupCommand(self._state, group,
+                                                        old_name, new_name))
+                    else:
+                        self._state.rename_group(group, new_name)
                 else:
                     group.name = new_name
                     self.refresh()

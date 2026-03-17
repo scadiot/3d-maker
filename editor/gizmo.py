@@ -90,6 +90,9 @@ class Gizmo:
         # État drag vertices : {(Polygon, vi): sommet_départ}
         self.drag_start_vertex_verts = {}
 
+        # Snapshot "avant drag" pour l'historique : {Polygon: list[vertex]}
+        self.drag_before_snapshot: dict = {}
+
     # ── Mode ──────────────────────────────────────────────────────────────────
     def cycle_mode(self, multi_selected):
         if multi_selected:
@@ -104,6 +107,19 @@ class Gizmo:
         self.drag_start_edge_verts   = {}
         self.drag_start_vertex_verts = {}
         self.drag_poly               = None
+        self.drag_before_snapshot    = {}
+
+    def finish_drag(self, history, state) -> None:
+        """Finalise le drag et enregistre la transformation dans l'historique."""
+        if self.dragging_axis is not None and self.drag_before_snapshot:
+            after   = {p: list(p.vertices) for p in self.drag_before_snapshot}
+            changed = any(after[p] != self.drag_before_snapshot[p] for p in after)
+            if changed:
+                from editor.history import TransformCommand
+                history.record(TransformCommand(state,
+                                                dict(self.drag_before_snapshot),
+                                                after))
+        self.stop_drag()
 
     # ── Dessin ────────────────────────────────────────────────────────────────
     def draw(self, state, camera):
@@ -253,6 +269,10 @@ class Gizmo:
                 self.drag_start_edge_verts[(poly, (ei+1) % len(q))] = tuple(q[(ei+1) % len(q)])
             self.drag_start_verts_all = {}
             center = self._edge_center(state)
+            self.drag_before_snapshot = {}
+            for poly, _ in self.drag_start_edge_verts:
+                if poly not in self.drag_before_snapshot:
+                    self.drag_before_snapshot[poly] = list(poly.vertices)
         elif state.selected_vertices:
             self.drag_start_edge_verts   = {}
             self.drag_start_vertex_verts = {}
@@ -262,6 +282,10 @@ class Gizmo:
                     self.drag_start_vertex_verts[(poly, vi)] = tuple(q[vi])
             self.drag_start_verts_all = {}
             center = self._vertex_center(state)
+            self.drag_before_snapshot = {}
+            for poly, _ in self.drag_start_vertex_verts:
+                if poly not in self.drag_before_snapshot:
+                    self.drag_before_snapshot[poly] = list(poly.vertices)
         else:
             self.drag_start_edge_verts   = {}
             self.drag_start_vertex_verts = {}
@@ -270,6 +294,8 @@ class Gizmo:
             cs = [math3d.poly_center(v) for v in self.drag_start_verts_all.values()]
             center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
                       sum(c[2] for c in cs)/len(cs)) if cs else (0.0, 0.0, 0.0)
+            self.drag_before_snapshot = {p: list(vs)
+                                         for p, vs in self.drag_start_verts_all.items()}
         self.drag_axis_t0 = math3d.ray_line_closest_s(
             tuple(camera.pos), camera.screen_ray(mx, my),
             center, GIZMO_AXES[axis][0])
@@ -334,6 +360,8 @@ class Gizmo:
         self.dragging_axis        = axis
         polys = state.selected_polygons
         self.drag_start_verts_all = {p: list(p.vertices) for p in polys}
+        self.drag_before_snapshot = {p: list(vs)
+                                     for p, vs in self.drag_start_verts_all.items()}
         self.drag_center  = _polys_center(polys)
         axis_dir          = GIZMO_AXES[axis][0]
         self.drag_plane_u, self.drag_plane_v = math3d.perp_basis(axis_dir)
@@ -366,6 +394,7 @@ class Gizmo:
         if not polys: return
         self.drag_poly        = polys[-1]
         self.drag_start_verts = list(self.drag_poly.vertices)
+        self.drag_before_snapshot = {self.drag_poly: list(self.drag_start_verts)}
         (self.drag_center, self.drag_wa, self.drag_ha,
          self.drag_hw0, self.drag_hh0) = math3d.quad_decompose(self.drag_start_verts)
         ray_o = tuple(camera.pos);  ray_d = camera.screen_ray(mx, my)

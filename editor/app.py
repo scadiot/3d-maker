@@ -32,7 +32,10 @@ from editor.renderer      import draw_grid
 from editor.uv_selector   import UVSelector
 from editor.group_panel   import GroupPanel
 from editor.state_manager import StateManager
-from editor.group         import all_polygons
+from editor.history       import (HistoryManager, AddPolygonsCommand,
+                                   DeletePolygonsCommand, PolyDataCommand,
+                                   GroupCommand, UngroupCommand)
+from editor.group         import Group, all_polygons
 
 
 class Viewport3D(OpenGLFrame):
@@ -65,6 +68,7 @@ class App:
         self._resizing      = False
         self._resize_start_x = 0
         self._resize_start_pw = PANEL_WIDTH
+        self.history           = HistoryManager()
         self.keys_pressed      = set()
         self.mouse_btn1        = False
         self.mouse_x           = 0
@@ -90,6 +94,9 @@ class App:
         self._bind_events()
 
         self.state.subscribe('selection_changed', lambda **_: self._sync_toolbar2_btns())
+
+        self.root.bind('<Control-z>', lambda _: self.history.undo())
+        self.root.bind('<Control-y>', lambda _: self.history.redo())
 
         self.scene.load_atlas(ATLAS_JSON)
         self.viewport.animate = 1
@@ -117,34 +124,38 @@ class App:
 
         # ── Edit ──────────────────────────────────────────────────────────────
         m_edit = tk.Menu(menubar, tearoff=0)
+        m_edit.add_command(label="Annuler", accelerator="Ctrl+Z",
+                           command=lambda: self.history.undo())
+        m_edit.add_command(label="Rétablir", accelerator="Ctrl+Y",
+                           command=lambda: self.history.redo())
+        m_edit.add_separator()
         m_edit.add_command(label="Dupliquer", accelerator="C",
-                           command=self.scene.duplicate_selected)
+                           command=self._cmd_duplicate)
         m_edit.add_command(label="Supprimer", accelerator="Suppr",
-                           command=lambda: (self.scene.delete_selected(), self.gizmo.stop_drag())
-                           if self.scene.selected_indices else None)
+                           command=self._cmd_delete)
         m_edit.add_separator()
         m_edit.add_command(label="Grouper", accelerator="G",
-                           command=self.scene.group_selected)
+                           command=self._cmd_group)
         m_edit.add_command(label="Dégrouper", accelerator="H",
-                           command=self.scene.ungroup_selected)
+                           command=self._cmd_ungroup)
         menubar.add_cascade(label="Edit", menu=m_edit)
 
         # ── Polygon ───────────────────────────────────────────────────────────
         m_poly = tk.Menu(menubar, tearoff=0)
         m_poly.add_command(label="Ajouter polygon",
-                           command=lambda: self.scene.add_polygon(self.camera.pos, self.camera.yaw, self.state.current_group))
+                           command=self._cmd_add_polygon)
         m_poly.add_command(label="Ajouter triangle",
-                           command=lambda: self.scene.add_triangle(self.camera.pos, self.camera.yaw, self.state.current_group))
+                           command=self._cmd_add_triangle)
         m_poly.add_separator()
         m_poly.add_command(label="Inverser orientation", accelerator="N",
-                           command=self.scene.flip_orientation)
+                           command=self._cmd_flip_orientation)
         m_poly.add_command(label="Rotation UVs", accelerator="R",
-                           command=self.scene.rotate_uvs)
+                           command=self._cmd_rotate_uvs)
         m_poly.add_separator()
         m_poly.add_command(label="Rapprocher arêtes",
-                           command=self.scene.rapprocher_edges)
+                           command=self._cmd_rapprocher_edges)
         m_poly.add_command(label="Créer polygon depuis arêtes",
-                           command=lambda: self.scene.create_polygon_from_edges(self.state.current_group))
+                           command=self._cmd_create_from_edges)
         menubar.add_cascade(label="Polygon", menu=m_poly)
 
         self.root.config(menu=menubar)
@@ -316,25 +327,24 @@ class App:
         add_btn(make_icon(ico_load),      self._load_json_dialog,  "Charger")
         add_sep()
         add_btn(make_icon(ico_polygon),
-                lambda: self.scene.add_polygon(self.camera.pos, self.camera.yaw, self.state.current_group),
+                self._cmd_add_polygon,
                 "Polygon")
         add_btn(make_icon(ico_triangle),
-                lambda: self.scene.add_triangle(self.camera.pos, self.camera.yaw, self.state.current_group),
+                self._cmd_add_triangle,
                 "Triangle")
         add_sep()
         add_btn(make_icon(ico_duplicate),
-                lambda: self.scene.duplicate_selected(),
+                self._cmd_duplicate,
                 "Dupliquer", "C")
         add_btn(make_icon(ico_delete),
-                lambda: (self.scene.delete_selected(), self.gizmo.stop_drag())
-                if self.scene.selected_indices else None,
+                self._cmd_delete,
                 "Supprimer", "Suppr")
         add_sep()
         add_btn(make_icon(ico_group),
-                lambda: self.scene.group_selected(),
+                self._cmd_group,
                 "Grouper", "G")
         add_btn(make_icon(ico_ungroup),
-                lambda: self.scene.ungroup_selected(),
+                self._cmd_ungroup,
                 "Dégrouper", "H")
         add_sep()
 
@@ -410,15 +420,15 @@ class App:
             return btn
 
         # ── Placement ─────────────────────────────────────────────────────────
-        add_btn(self.scene.flip_orientation,
+        add_btn(self._cmd_flip_orientation,
                 "Inverser orientation", "N")
-        add_btn(self.scene.rotate_uvs,
+        add_btn(self._cmd_rotate_uvs,
                 "Rotation UVs", "R")
         self._sep_edges = tk.Frame(self.toolbar2, width=1, bg='#38384a')
         self._sep_edges.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
-        self._btn_rapprocher = add_btn(self.scene.rapprocher_edges,
+        self._btn_rapprocher = add_btn(self._cmd_rapprocher_edges,
                                        "Rapprocher arêtes")
-        self._btn_create_from_edges = add_btn(lambda: self.scene.create_polygon_from_edges(self.state.current_group),
+        self._btn_create_from_edges = add_btn(self._cmd_create_from_edges,
                                               "Créer polygon depuis arêtes")
         self._sync_toolbar2_btns()
 
@@ -630,7 +640,7 @@ class App:
 
     def _on_mouse_up(self, event):
         self.mouse_btn1 = False
-        self.gizmo.stop_drag()
+        self.gizmo.finish_drag(self.history, self.state)
 
     def _on_mouse_wheel(self, event):
         self.camera.apply_scroll(event.delta / 120)
@@ -694,27 +704,26 @@ class App:
                 self.scene.open_tex_preview(self.root)
 
         if key == 'delete' and self.scene.selected_indices:
-            self.scene.delete_selected()
-            self.gizmo.stop_drag()
+            self._cmd_delete()
 
         if key == 'c':
-            self.scene.duplicate_selected()
+            self._cmd_duplicate()
 
         if key == 'space' and self.scene.selected_indices:
             self.gizmo.cycle_mode(len(self.scene.selected_indices) > 1)
             self._sync_gizmo_btns()
 
         if key == 'g' and len(self.scene.selected_indices) >= 2:
-            self.scene.group_selected()
+            self._cmd_group()
 
         if key == 'h' and self.scene.selected_indices:
-            self.scene.ungroup_selected()
+            self._cmd_ungroup()
 
         if key == 'r' and self.scene.selected_indices:
-            self.scene.rotate_uvs()
+            self._cmd_rotate_uvs()
 
         if key == 'n' and self.scene.selected_indices:
-            self.scene.flip_orientation()
+            self._cmd_flip_orientation()
 
         if key == 'e':
             modes = ['polygon', 'edge', 'vertex']
@@ -732,6 +741,108 @@ class App:
 
         if key == 'escape':
             self._on_close()
+
+    # ── Commandes avec historique ──────────────────────────────────────────────
+
+    def _record_added_polygons(self, before_ids: set) -> None:
+        """Enregistre les polygones ajoutés depuis before_ids comme commande."""
+        new_polys = [p for p in all_polygons(self.scene.root)
+                     if id(p) not in before_ids]
+        if new_polys:
+            self.history.record(AddPolygonsCommand(self.state, new_polys))
+
+    def _cmd_add_polygon(self) -> None:
+        before_ids = {id(p) for p in all_polygons(self.scene.root)}
+        self.scene.add_polygon(self.camera.pos, self.camera.yaw,
+                               self.state.current_group)
+        self._record_added_polygons(before_ids)
+
+    def _cmd_add_triangle(self) -> None:
+        before_ids = {id(p) for p in all_polygons(self.scene.root)}
+        self.scene.add_triangle(self.camera.pos, self.camera.yaw,
+                                self.state.current_group)
+        self._record_added_polygons(before_ids)
+
+    def _cmd_duplicate(self) -> None:
+        before_ids = {id(p) for p in all_polygons(self.scene.root)}
+        self.scene.duplicate_selected()
+        self._record_added_polygons(before_ids)
+
+    def _cmd_delete(self) -> None:
+        polys = self.state.selected_polygons
+        if not polys:
+            return
+        saved = []
+        for p in polys:
+            if p.group is not None:
+                try:
+                    idx = p.group.polygons.index(p)
+                except ValueError:
+                    idx = len(p.group.polygons)
+                saved.append((p, p.group, idx))
+        if not saved:
+            return
+        self.history.push(DeletePolygonsCommand(self.state, saved))
+        self.gizmo.stop_drag()
+
+    def _cmd_rotate_uvs(self) -> None:
+        polys = self.state.selected_polygons
+        if not polys:
+            return
+        before = {p: (list(p.vertices), list(p.uvs)) for p in polys}
+        self.scene.rotate_uvs()
+        after = {p: (list(p.vertices), list(p.uvs)) for p in polys}
+        self.history.record(PolyDataCommand(self.state, before, after))
+
+    def _cmd_flip_orientation(self) -> None:
+        polys = self.state.selected_polygons
+        if not polys:
+            return
+        before = {p: (list(p.vertices), list(p.uvs)) for p in polys}
+        self.scene.flip_orientation()
+        after = {p: (list(p.vertices), list(p.uvs)) for p in polys}
+        self.history.record(PolyDataCommand(self.state, before, after))
+
+    def _cmd_rapprocher_edges(self) -> None:
+        edges = self.state.selected_edges
+        if len(edges) != 2:
+            return
+        affected = list({poly for poly, _ in edges})
+        before = {p: (list(p.vertices), list(p.uvs)) for p in affected}
+        self.scene.rapprocher_edges()
+        after = {p: (list(p.vertices), list(p.uvs)) for p in affected}
+        self.history.record(PolyDataCommand(self.state, before, after))
+
+    def _cmd_create_from_edges(self) -> None:
+        before_ids = {id(p) for p in all_polygons(self.scene.root)}
+        self.scene.create_polygon_from_edges(self.state.current_group)
+        self._record_added_polygons(before_ids)
+
+    def _cmd_group(self) -> None:
+        polys = self.state.selected_polygons
+        if len(polys) < 2:
+            return
+        old_groups = {p: (p.group, p.group.polygons.index(p)) for p in polys}
+        parent = self.scene.root
+        new_group = Group(name="Groupe")
+        self.history.push(GroupCommand(self.state, polys, old_groups,
+                                       new_group, parent))
+
+    def _cmd_ungroup(self) -> None:
+        polys = self.state.selected_polygons
+        if not polys:
+            return
+        groups_to_dissolve = {p.group for p in polys
+                              if p.group is not self.scene.root}
+        if not groups_to_dissolve:
+            return
+        groups_info = []
+        for group in groups_to_dissolve:
+            parent = group.parent if group.parent is not None else self.scene.root
+            polys_idx = [(p, group.polygons.index(p))
+                         for p in list(group.polygons)]
+            groups_info.append((group, parent, polys_idx))
+        self.history.push(UngroupCommand(self.state, groups_info))
 
     def _handle_mouse_down_3d(self, mx, my):
         ctrl_held = 'shift_l' in self.keys_pressed
