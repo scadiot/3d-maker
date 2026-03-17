@@ -33,6 +33,7 @@ class Group:
         self.parent:   Optional['Group'] = parent
         self.children: List['Group']     = []
         self.polygons: List[Polygon]     = []
+        self.hidden:   bool              = False
 
     # ── Ajout ──────────────────────────────────────────────────────────────────
 
@@ -118,3 +119,13 @@ def iter_children(node: Group) -> Iterator[Union[Group, Polygon]]:
 def all_polygons(node: Union[Group, Polygon]) -> List[Polygon]:
     """Retourne la liste de tous les Polygon du sous-arbre."""
     return list(iter_polygons(node))
+
+
+def is_visible(poly: Polygon) -> bool:
+    """Retourne True si le polygone est visible (aucun groupe ancêtre n'est caché)."""
+    node = poly.group
+    while node is not None:
+        if node.hidden:
+            return False
+        node = node.parent
+    return True

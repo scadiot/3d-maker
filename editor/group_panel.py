@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 
-from editor.group import Group, Polygon, all_polygons
+from editor.group import Group, Polygon, all_polygons, is_visible
 
 
 class GroupPanel(tk.Frame):
@@ -25,6 +25,7 @@ class GroupPanel(tk.Frame):
         self._drag_iids: list = []
         self._drag_objs: list = []
         self._drop_iid        = None
+        self._hover_iid       = None
         self._syncing         = False
         if self._state is not None:
             self._state.subscribe('selection_changed', self._on_selection_changed)
@@ -87,6 +88,8 @@ class GroupPanel(tk.Frame):
         self._tree.configure(yscrollcommand=vsb.set)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
         self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._tree.tag_configure('drop_target', background='#1a3d1a', foreground='#6ddf6d')
+        self._tree.tag_configure('hidden', foreground='#555566')
 
         self._tree.bind('<ButtonPress-1>',   self._on_drag_start)
         self._tree.bind('<B1-Motion>',       self._on_drag_motion)
@@ -125,8 +128,14 @@ class GroupPanel(tk.Frame):
             self._app._update_statusbar()
 
     def _insert_group(self, group: Group, parent_iid: str):
-        text = '⬡ Scène' if group.is_root else f'▶ {group.name}'
-        iid  = self._tree.insert(parent_iid, 'end', text=text, open=True)
+        if group.is_root:
+            text = '⬡ Scène'
+        elif group.hidden:
+            text = f'▶ {group.name}  [caché]'
+        else:
+            text = f'▶ {group.name}'
+        tags = ('hidden',) if group.hidden else ()
+        iid  = self._tree.insert(parent_iid, 'end', text=text, open=True, tags=tags)
         self._iid_to_obj[iid] = group
         for child in group.children:
             self._insert_group(child, iid)
@@ -256,9 +265,35 @@ class GroupPanel(tk.Frame):
         if not self._drag_iids:
             return
         self._tree.config(cursor='exchange')
+        # Empêche le Treeview de modifier la sélection pendant le déplacement
+        self._syncing = True
+        self._tree.selection_set(self._drag_iids)
+        self._syncing = False
+
+        # Surbrillance verte du groupe cible survolé
+        hovered_iid = self._tree.identify_row(event.y)
+        new_hover_iid = None
+        if hovered_iid and hovered_iid not in self._drag_iids:
+            obj = self._iid_to_obj.get(hovered_iid)
+            if obj is not None:
+                target_group = obj if isinstance(obj, Group) else (obj.group or self._scene.root)
+                new_hover_iid = next(
+                    (i for i, o in self._iid_to_obj.items() if o is target_group), None
+                )
+        if new_hover_iid != self._hover_iid:
+            if self._hover_iid:
+                self._tree.item(self._hover_iid, tags=())
+            self._hover_iid = new_hover_iid
+            if new_hover_iid:
+                self._tree.item(new_hover_iid, tags=('drop_target',))
+
+        return 'break'
 
     def _on_drag_end(self, event):
         self._tree.config(cursor='')
+        if self._hover_iid:
+            self._tree.item(self._hover_iid, tags=())
+            self._hover_iid = None
         if not self._drag_iids:
             return
 
@@ -443,6 +478,11 @@ class GroupPanel(tk.Frame):
         if isinstance(clicked_obj, Group) and not clicked_obj.is_root:
             menu.add_command(label='Sélectionner tous',
                              command=lambda: self._select_all_in_group(clicked_obj))
+            menu.add_separator()
+            menu.add_command(label='Cacher',
+                             command=lambda: self._set_group_hidden(clicked_obj, True))
+            menu.add_command(label='Afficher',
+                             command=lambda: self._set_group_hidden(clicked_obj, False))
             has_items = True
 
         if movable:
@@ -584,6 +624,13 @@ class GroupPanel(tk.Frame):
         if not indices:
             return
         self._scene.selected_indices = indices  # → StateManager → selection_changed → sync_selection()
+
+    def _set_group_hidden(self, group: Group, hidden: bool):
+        """Cache ou affiche un groupe et rafraîchit l'affichage."""
+        group.hidden = hidden
+        self.refresh()
+        if self._state is not None:
+            self._state.notify('scene_changed', change_type='visibility')
 
     def _is_ancestor(self, group: Group, candidate: Group) -> bool:
         node = candidate

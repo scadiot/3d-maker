@@ -1,6 +1,6 @@
 """
 Visionneuse 3D
-Navigation : ZQSD déplacer, molette orienter, Espace alterner gizmos, Échap quitter
+Navigation : ZQSD déplacer, molette orienter, Espace alterner gizmos
 """
 
 from editor.app import App

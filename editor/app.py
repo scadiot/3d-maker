@@ -4,7 +4,7 @@ import math
 import time
 import ctypes
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from PIL import Image, ImageDraw, ImageTk
 
 from pyopengltk import OpenGLFrame
@@ -104,6 +104,8 @@ class App:
         self.root.mainloop()
 
     def _on_close(self):
+        if not messagebox.askyesno("Quitter", "Voulez-vous vraiment quitter l'application ?"):
+            return
         self.scene.close_tex_preview()
         self.root.destroy()
 
@@ -118,7 +120,7 @@ class App:
         m_file.add_command(label="Charger JSON…",
                            command=self._load_json_dialog)
         m_file.add_separator()
-        m_file.add_command(label="Quitter", accelerator="Échap",
+        m_file.add_command(label="Quitter",
                            command=self._on_close)
         menubar.add_cascade(label="File", menu=m_file)
 
@@ -740,8 +742,6 @@ class App:
                 self._snap_var.set(SNAP_VALUES[idx + 1])
             self._on_snap_change()
 
-        if key == 'escape':
-            self._on_close()
 
     # ── Commandes avec historique ──────────────────────────────────────────────
 

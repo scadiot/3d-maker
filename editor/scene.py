@@ -14,11 +14,12 @@ from OpenGL.GL import (
     GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
     GL_CULL_FACE, GL_BACK, GL_CW, GL_TRIANGLE_FAN, GL_LINE_LOOP, GL_LINES, GL_POINTS,
     GL_BLEND, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+    GL_DEPTH_TEST,
 )
 
 from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
 from editor import math3d
-from editor.group import Group, all_polygons, iter_polygons
+from editor.group import Group, all_polygons, iter_polygons, is_visible
 
 
 # ── Vues plates (compatibilité avec gizmo.py et le reste) ─────────────────────
@@ -259,8 +260,10 @@ class Scene:
     def pick_polygon(self, ray_o, ray_d):
         """Retourne l'indice du polygon le plus proche sous le rayon, ou -1."""
         best_t, best_i = float('inf'), -1
-        for i, p in enumerate(self.polygons):
-            t = math3d.ray_poly_intersect(ray_o, ray_d, p)
+        for i, poly_obj in enumerate(all_polygons(self.root)):
+            if not is_visible(poly_obj):
+                continue
+            t = math3d.ray_poly_intersect(ray_o, ray_d, poly_obj.vertices)
             if t is not None and t < best_t:
                 best_t, best_i = t, i
         return best_i
@@ -268,14 +271,17 @@ class Scene:
     def pick_edge(self, ray_o, ray_d):
         """Retourne (poly_idx, edge_idx) de l'arête la plus proche du clic, ou None."""
         best_t, best_poly = float('inf'), -1
-        for i, p in enumerate(self.polygons):
-            t = math3d.ray_poly_intersect(ray_o, ray_d, p)
+        flat = all_polygons(self.root)
+        for i, poly_obj in enumerate(flat):
+            if not is_visible(poly_obj):
+                continue
+            t = math3d.ray_poly_intersect(ray_o, ray_d, poly_obj.vertices)
             if t is not None and t < best_t:
                 best_t, best_poly = t, i
         if best_poly < 0:
             return None
         hit  = math3d.vadd(ray_o, math3d.vscale(ray_d, best_t))
-        poly = self.polygons[best_poly]
+        poly = flat[best_poly].vertices
         n    = len(poly)
         best_edge, best_dist = 0, float('inf')
         for ei in range(n):
@@ -290,14 +296,17 @@ class Scene:
     def pick_vertex(self, ray_o, ray_d):
         """Retourne (poly_idx, vertex_idx) du sommet le plus proche du clic, ou None."""
         best_t, best_poly = float('inf'), -1
-        for i, p in enumerate(self.polygons):
-            t = math3d.ray_poly_intersect(ray_o, ray_d, p)
+        flat = all_polygons(self.root)
+        for i, poly_obj in enumerate(flat):
+            if not is_visible(poly_obj):
+                continue
+            t = math3d.ray_poly_intersect(ray_o, ray_d, poly_obj.vertices)
             if t is not None and t < best_t:
                 best_t, best_poly = t, i
         if best_poly < 0:
             return None
         hit  = math3d.vadd(ray_o, math3d.vscale(ray_d, best_t))
-        poly = self.polygons[best_poly]
+        poly = flat[best_poly].vertices
         best_vi, best_dist = 0, float('inf')
         for vi, v in enumerate(poly):
             d = math3d.vlength(math3d.vsub(hit, tuple(v)))
@@ -532,8 +541,12 @@ class Scene:
         needed_ids    = edge_poly_ids | vert_poly_ids
         poly_verts_by_id = {}  # {id(poly_obj): vertices}
 
+        selected_polys_verts = []  # vertices des polygones sélectionnés, rendu différé
+
         glEnable(GL_CULL_FACE);  glCullFace(GL_BACK);  glFrontFace(GL_CW)
         for poly_obj in iter_polygons(self.root):
+            if not is_visible(poly_obj):
+                continue
             poly = poly_obj.vertices
             uvs  = poly_obj.uvs
             sel  = (id(poly_obj) in sel_poly_ids)
@@ -546,23 +559,35 @@ class Scene:
                 glTexCoord2f(u, v);  glVertex3f(vx, vy, vz)
             glEnd()
             glDisable(GL_TEXTURE_2D)
-            glLineWidth(2.5 if sel else 1.5)
             if sel:
-                glColor4f(1.0, 0.15, 0.15, 1.0)
-            elif poly_obj.group is not self.root:
-                glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-                glColor4f(0.2, 0.7, 1.0, 0.5)
+                selected_polys_verts.append(poly)
             else:
+                glLineWidth(1.5)
                 glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-                glColor4f(1.0, 0.75, 0.35, 0.5)
-            glBegin(GL_LINE_LOOP)
-            for vx, vy, vz in poly: glVertex3f(vx, vy, vz)
-            glEnd()
-            if not sel:
+                if poly_obj.group is not self.root:
+                    glColor4f(0.2, 0.7, 1.0, 0.5)
+                else:
+                    glColor4f(1.0, 0.75, 0.35, 0.5)
+                glBegin(GL_LINE_LOOP)
+                for vx, vy, vz in poly: glVertex3f(vx, vy, vz)
+                glEnd()
                 glDisable(GL_BLEND)
         glLineWidth(1.0)
         glDisable(GL_CULL_FACE)
+
+        # Bordures de sélection rouge rendues sans z-buffer (toujours visibles)
+        if selected_polys_verts:
+            glDisable(GL_DEPTH_TEST)
+            glLineWidth(2.5)
+            glColor4f(1.0, 0.15, 0.15, 1.0)
+            for poly in selected_polys_verts:
+                glBegin(GL_LINE_LOOP)
+                for vx, vy, vz in poly: glVertex3f(vx, vy, vz)
+                glEnd()
+            glLineWidth(1.0)
+            glEnable(GL_DEPTH_TEST)
         if sel_edges:
+            glDisable(GL_DEPTH_TEST)
             glLineWidth(4.0)
             glColor3f(0.05, 0.05, 1.0)
             glBegin(GL_LINES)
@@ -573,7 +598,9 @@ class Scene:
                     glVertex3f(*p[(edge_idx + 1) % len(p)])
             glEnd()
             glLineWidth(1.0)
+            glEnable(GL_DEPTH_TEST)
         if sel_verts:
+            glDisable(GL_DEPTH_TEST)
             glPointSize(8.0)
             glColor3f(0.05, 1.0, 0.3)
             glBegin(GL_POINTS)
@@ -583,3 +610,4 @@ class Scene:
                     glVertex3f(*p[vert_idx])
             glEnd()
             glPointSize(1.0)
+            glEnable(GL_DEPTH_TEST)
