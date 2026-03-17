@@ -423,17 +423,159 @@ class GroupPanel(tk.Frame):
         iid = self._tree.identify_row(event.y)
         if not iid:
             return
-        obj = self._iid_to_obj.get(iid)
-        if not isinstance(obj, Group):
-            return
+
+        # Si l'item cliqué n'est pas dans la sélection, le sélectionner seul
+        sel = list(self._tree.selection())
+        if iid not in sel:
+            self._tree.selection_set([iid])
+            sel = [iid]
+
+        clicked_obj = self._iid_to_obj.get(iid)
+        objs    = [self._iid_to_obj[i] for i in sel if i in self._iid_to_obj]
+        movable = [o for o in objs if not (isinstance(o, Group) and o.is_root)]
 
         menu = tk.Menu(self._tree, tearoff=0,
                        bg='#2a2a3a', fg=self._FG,
                        activebackground=self._SEL_BG, activeforeground=self._FG,
                        relief='flat', bd=1)
-        menu.add_command(label='Sélectionner tous',
-                         command=lambda: self._select_all_in_group(obj))
+        has_items = False
+
+        if isinstance(clicked_obj, Group) and not clicked_obj.is_root:
+            menu.add_command(label='Sélectionner tous',
+                             command=lambda: self._select_all_in_group(clicked_obj))
+            has_items = True
+
+        if movable:
+            if has_items:
+                menu.add_separator()
+            menu.add_command(label='Déplacer dans un groupe',
+                             command=lambda: self._show_move_to_group_dialog(movable))
+            has_items = True
+
+        if not has_items:
+            return
         menu.tk_popup(event.x_root, event.y_root)
+
+    def _show_move_to_group_dialog(self, movable: list):
+        """Affiche la popup de sélection du groupe cible."""
+        selected_groups = {o for o in movable if isinstance(o, Group)}
+
+        def is_excluded(group: Group) -> bool:
+            """Exclut les groupes sélectionnés et leurs descendants."""
+            if group in selected_groups:
+                return True
+            node = group.parent
+            while node is not None:
+                if node in selected_groups:
+                    return True
+                node = node.parent
+            return False
+
+        def collect_groups(node: Group) -> list:
+            if is_excluded(node):
+                return []
+            result = [node]
+            for child in node.children:
+                result.extend(collect_groups(child))
+            return result
+
+        valid_groups = collect_groups(self._scene.root)
+        if not valid_groups:
+            return
+
+        def group_label(group: Group) -> str:
+            depth = 0
+            node = group.parent
+            while node is not None:
+                depth += 1
+                node = node.parent
+            prefix = '  ' * depth
+            return prefix + ('Scène' if group.is_root else group.name)
+
+        labels = [group_label(g) for g in valid_groups]
+
+        popup = tk.Toplevel(self._tree)
+        popup.title('Déplacer dans un groupe')
+        popup.configure(bg='#1a1a21')
+        popup.resizable(False, False)
+        popup.transient(self._tree.winfo_toplevel())
+        popup.grab_set()
+
+        popup.update_idletasks()
+        w, h = 300, 130
+        x = self._tree.winfo_rootx() + self._tree.winfo_width() // 2 - w // 2
+        y = self._tree.winfo_rooty() + self._tree.winfo_height() // 2 - h // 2
+        popup.geometry(f'{w}x{h}+{x}+{y}')
+
+        tk.Label(popup, text='Groupe cible :',
+                 bg='#1a1a21', fg=self._FG,
+                 font=('Segoe UI', 9)).pack(padx=12, pady=(12, 4), anchor='w')
+
+        combo_var = tk.StringVar(value=labels[0])
+        combo = ttk.Combobox(popup, textvariable=combo_var, values=labels,
+                             state='readonly', font=('Segoe UI', 9))
+        combo.pack(fill=tk.X, padx=12, pady=4)
+
+        btn_frame = tk.Frame(popup, bg='#1a1a21')
+        btn_frame.pack(pady=8)
+
+        def on_ok(_event=None):
+            idx = combo.current()
+            if idx < 0:
+                return
+            self._do_move_to_group(movable, valid_groups[idx])
+            popup.destroy()
+
+        tk.Button(btn_frame, text='OK', command=on_ok,
+                  bg='#2d4080', fg=self._FG,
+                  activebackground='#3d50a0', activeforeground=self._FG,
+                  relief='flat', bd=0, font=('Segoe UI', 9), width=8,
+                  cursor='hand2').pack(side=tk.LEFT, padx=4)
+        tk.Button(btn_frame, text='Annuler', command=popup.destroy,
+                  bg='#2a2a3a', fg=self._FG,
+                  activebackground='#3a3a4a', activeforeground=self._FG,
+                  relief='flat', bd=0, font=('Segoe UI', 9), width=8,
+                  cursor='hand2').pack(side=tk.LEFT, padx=4)
+
+        popup.bind('<Return>', on_ok)
+        popup.bind('<Escape>', lambda _: popup.destroy())
+
+    def _do_move_to_group(self, movable: list, target_group: Group):
+        """Déplace les éléments sélectionnés vers target_group (avec undo/redo)."""
+        history    = getattr(self._app, 'history', None)
+        move_cmds  = []
+
+        for obj in movable:
+            if isinstance(obj, Group):
+                if obj is target_group or self._is_ancestor(obj, target_group):
+                    continue
+                if obj.parent is target_group:
+                    continue
+                if self._state is not None and history is not None:
+                    from editor.history import MoveGroupCommand
+                    move_cmds.append(MoveGroupCommand(self._state, obj,
+                                                      obj.parent, target_group))
+                elif self._state is not None:
+                    self._state.move_group(obj, target_group)
+                else:
+                    target_group.adopt_group(obj)
+            else:
+                if obj.group is target_group:
+                    continue
+                if self._state is not None and history is not None:
+                    from editor.history import MovePolygonCommand
+                    move_cmds.append(MovePolygonCommand(self._state, obj,
+                                                        obj.group, target_group))
+                elif self._state is not None:
+                    self._state.move_polygon(obj, target_group)
+                else:
+                    target_group.adopt_polygon(obj)
+
+        if move_cmds:
+            from editor.history import CompoundCommand
+            history.push(CompoundCommand(move_cmds) if len(move_cmds) > 1 else move_cmds[0])
+        elif self._state is None:
+            self.refresh()
 
     def _select_all_in_group(self, group: Group):
         flat    = all_polygons(self._scene.root)
