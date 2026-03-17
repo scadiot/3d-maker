@@ -89,6 +89,7 @@ class GroupPanel(tk.Frame):
         self._tree.bind('<<TreeviewSelect>>', self._on_select)
         self._tree.bind('<Double-ButtonPress-1>', self._on_double_click)
         self._tree.bind('<ButtonPress-3>',   self._on_right_click)
+        self._tree.bind('<Delete>',          self._delete_selected)
 
         self.refresh()
 
@@ -137,24 +138,45 @@ class GroupPanel(tk.Frame):
         parent_group.add_group('Groupe')
         self.refresh()
 
-    def _delete_selected(self):
-        """Supprime le groupe (et tous ses enfants) ou le polygon sélectionné."""
+    def _delete_selected(self, *_):
+        """Supprime tous les groupes et polygones sélectionnés."""
         sel = self._tree.selection()
         if not sel:
             return
-        obj = self._iid_to_obj.get(sel[0])
-        if obj is None or (isinstance(obj, Group) and obj.is_root):
+
+        objs = [self._iid_to_obj[iid] for iid in sel if iid in self._iid_to_obj]
+        objs = [o for o in objs if not (isinstance(o, Group) and o.is_root)]
+        if not objs:
             return
 
+        # Dédoublonner : si un groupe est sélectionné avec ses enfants,
+        # supprimer le groupe suffit (les enfants disparaissent avec lui).
+        def is_descendant(obj, ancestors):
+            if isinstance(obj, Group):
+                node = obj.parent
+            else:
+                node = obj.group
+            while node is not None:
+                if node in ancestors:
+                    return True
+                node = node.parent
+            return False
+
+        groups_to_delete = {o for o in objs if isinstance(o, Group)}
+        filtered = [o for o in objs if not is_descendant(o, groups_to_delete)]
+
         old_flat = all_polygons(self._scene.root)
-        if isinstance(obj, Group):
-            obj.parent.remove_group(obj)
-        else:
-            if obj.group is not None:
-                obj.group.remove_polygon(obj)
+        for obj in filtered:
+            if isinstance(obj, Group):
+                if obj.parent is not None:
+                    obj.parent.remove_group(obj)
+            else:
+                if obj.group is not None:
+                    obj.group.remove_polygon(obj)
 
         self._scene._refresh_int_selections(old_flat)
         self.refresh()
+        return 'break'
 
     # ── Drag & drop ───────────────────────────────────────────────────────────
 
