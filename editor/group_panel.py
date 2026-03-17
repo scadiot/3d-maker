@@ -116,9 +116,9 @@ class GroupPanel(tk.Frame):
         flat  = all_polygons(self._scene.root)
         try:
             idx   = flat.index(poly)
-            label = f'  ◆ Polygon {idx}'
+            label = f'◆ Polygon {idx}'
         except ValueError:
-            label = '  ◆ Polygon ?'
+            label = '◆ Polygon ?'
         iid = self._tree.insert(parent_iid, 'end', text=label)
         self._iid_to_obj[iid] = poly
 
