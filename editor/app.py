@@ -739,17 +739,17 @@ class App:
         sel_mode  = self.state.selection_mode
 
         if sel_mode == 'edge' and self.state.selected_edges:
-            axis = self.gizmo.pick_translate_axis(mx, my, self.scene, self.camera)
+            axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera)
             if axis:
-                self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
+                self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
             else:
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             return
 
         if sel_mode == 'vertex' and self.state.selected_vertices:
-            axis = self.gizmo.pick_translate_axis(mx, my, self.scene, self.camera)
+            axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera)
             if axis:
-                self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
+                self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
             else:
                 self._apply_vertex_selection(self._pick_vertex(mx, my), ctrl_held)
             return
@@ -759,27 +759,27 @@ class App:
             return
 
         if self.gizmo.mode == 'translate' or (multi and self.gizmo.mode == 'scale'):
-            axis = self.gizmo.pick_translate_axis(mx, my, self.scene, self.camera)
+            axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera)
             if axis:
-                self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
+                self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
             elif sel_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
 
         elif self.gizmo.mode == 'rotate':
-            axis = self.gizmo.pick_rotate_axis(mx, my, self.scene, self.camera)
+            axis = self.gizmo.pick_rotate_axis(mx, my, self.state, self.camera)
             if axis:
-                self.gizmo.start_drag(axis, mx, my, self.scene, self.camera)
+                self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
             elif sel_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
 
         else:  # scale
-            handle = self.gizmo.pick_scale_handle(mx, my, self.scene, self.camera)
+            handle = self.gizmo.pick_scale_handle(mx, my, self.state, self.camera)
             if handle:
-                self.gizmo.start_drag(handle, mx, my, self.scene, self.camera)
+                self.gizmo.start_drag(handle, mx, my, self.state, self.camera)
             elif sel_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
@@ -879,7 +879,7 @@ class App:
         self.last_time = now
 
         if self.gizmo.dragging_axis and self.mouse_btn1:
-            self.gizmo.update_drag(self.mouse_x, self.mouse_y, self.scene, self.camera)
+            self.gizmo.update_drag(self.mouse_x, self.mouse_y, self.state, self.camera)
 
         self.camera.apply_movement(self.keys_pressed, dt)
         self._update_statusbar()
@@ -902,4 +902,4 @@ class App:
 
         draw_grid(30, 1)
         self.scene.draw()
-        self.gizmo.draw(self.scene, self.camera)
+        self.gizmo.draw(self.state, self.camera)

@@ -67,12 +67,6 @@ class StateManager:
     def selected_vertices(self) -> list[tuple[Polygon, int]]:
         return list(self._selected_vertices)
 
-    @property
-    def selected_indices(self) -> list[int]:
-        """Compatibilité Gizmo : indices dans all_polygons(root)."""
-        all_polys = all_polygons(self._root_group)
-        return [all_polys.index(p) for p in self._selected_polygons if p in all_polys]
-
     # ------------------------------------------------------------------ #
     # Mutateurs scène                                                      #
     # ------------------------------------------------------------------ #
