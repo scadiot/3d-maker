@@ -450,7 +450,7 @@ class Scene:
         delta = math3d.vsub(c1, c2)
         self.polygons[qi2] = [math3d.vadd(tuple(v), delta) for v in q2]
 
-    def create_polygon_from_edges(self):
+    def create_polygon_from_edges(self, group=None):
         """Crée un nouveau polygon (quad) en reliant les deux arêtes sélectionnées."""
         if len(self.selected_edges_ordered) != 2:
             return
@@ -483,7 +483,8 @@ class Scene:
         if len(unique) < 3:
             return
         quad_uvs = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
-        self.root.add_polygon(unique, quad_uvs[:len(unique)])
+        target = group if group is not None else self.root
+        target.add_polygon(unique, quad_uvs[:len(unique)])
 
     # ── Aperçu texture ────────────────────────────────────────────────────────
     def open_tex_preview(self, root_tk):

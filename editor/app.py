@@ -140,7 +140,7 @@ class App:
         m_poly.add_command(label="Rapprocher arêtes",
                            command=self.scene.rapprocher_edges)
         m_poly.add_command(label="Créer polygon depuis arêtes",
-                           command=self.scene.create_polygon_from_edges)
+                           command=lambda: (self.scene.create_polygon_from_edges(self.current_group), self._refresh_group_panel()))
         menubar.add_cascade(label="Polygon", menu=m_poly)
 
         self.root.config(menu=menubar)
@@ -413,7 +413,7 @@ class App:
         self._sep_edges.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
         self._btn_rapprocher = add_btn(self.scene.rapprocher_edges,
                                        "Rapprocher arêtes")
-        self._btn_create_from_edges = add_btn(self.scene.create_polygon_from_edges,
+        self._btn_create_from_edges = add_btn(lambda: (self.scene.create_polygon_from_edges(self.current_group), self._refresh_group_panel()),
                                               "Créer polygon depuis arêtes")
         self._sync_toolbar2_btns()
 
