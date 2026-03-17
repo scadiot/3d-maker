@@ -649,6 +649,7 @@ class App:
         self.camera.apply_scroll(event.delta / 120)
 
     def _on_middle_down(self, event):
+        self.viewport.focus_set()
         self.panning = True
         self.pan_last_x = event.x_root
         self.pan_last_y = event.y_root
