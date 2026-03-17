@@ -63,11 +63,12 @@ class App:
         self._resizing      = False
         self._resize_start_x = 0
         self._resize_start_pw = PANEL_WIDTH
-        self.keys_pressed   = set()
-        self.mouse_btn1     = False
-        self.mouse_x        = 0
-        self.mouse_y        = 0
-        self.last_time      = time.time()
+        self.keys_pressed      = set()
+        self.mouse_btn1        = False
+        self.mouse_x           = 0
+        self.mouse_y           = 0
+        self.last_time         = time.time()
+        self._viewport_focused = False
 
     # ── Cycle de vie ──────────────────────────────────────────────────────────
     def run(self):
@@ -572,6 +573,8 @@ class App:
         vw = _TOTAL_CONTENT_WIDTH - self.panel_width - _SEP_WIDTH
         self.viewport = Viewport3D(self.root, self, width=vw, height=HEIGHT)
         self.viewport.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.viewport.bind('<FocusIn>',  self._on_viewport_focus_in)
+        self.viewport.bind('<FocusOut>', self._on_viewport_focus_out)
 
     def _on_sep_press(self, event):
         self._resizing       = True
@@ -609,6 +612,7 @@ class App:
 
     # ── Événements souris ─────────────────────────────────────────────────────
     def _on_mouse_down(self, event):
+        self.viewport.focus_set()
         self.mouse_btn1 = True
         self.mouse_x, self.mouse_y = event.x, event.y
         self._handle_mouse_down_3d(event.x, event.y)
@@ -643,8 +647,18 @@ class App:
                 self.pan_last_x = cx
                 self.pan_last_y = cy
 
+    # ── Focus viewport ────────────────────────────────────────────────────────
+    def _on_viewport_focus_in(self, _event):
+        self._viewport_focused = True
+
+    def _on_viewport_focus_out(self, _event):
+        self._viewport_focused = False
+        self.keys_pressed.clear()
+
     # ── Événements clavier ────────────────────────────────────────────────────
     def _on_key_press(self, event):
+        if not self._viewport_focused:
+            return
         key = event.keysym.lower()
         self.keys_pressed.add(key)
         self._handle_keyboard(key)
