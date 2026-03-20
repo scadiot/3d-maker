@@ -24,6 +24,11 @@ class Camera:
         r = math.radians(self.yaw)
         return (math.cos(r), 0.0, -math.sin(r))
 
+    def up_vector(self):
+        """Camera local up direction in world space."""
+        yr, pr = math.radians(self.yaw), math.radians(self.pitch)
+        return (math.sin(pr)*math.sin(yr), math.cos(pr), math.sin(pr)*math.cos(yr))
+
     # ── Projection ────────────────────────────────────────────────────────────
     def world_to_screen(self, wx, wy, wz):
         """Projects a world point to viewport coordinates. Returns (px, py) or None."""
@@ -48,12 +53,18 @@ class Camera:
         return math3d.normalize((rx1*cy + rz1*sy, ry1, -rx1*sy + rz1*cy))
 
     # ── Input ─────────────────────────────────────────────────────────────────
-    def apply_movement(self, keys, dt):
-        """keys: set of lowercase Tkinter keysyms (e.g. {'z', 'd'})."""
+    def apply_movement(self, keys, dt, panning=False):
+        """keys: set of lowercase Tkinter keysyms (e.g. {'z', 'd'}).
+        panning: when True, Z/S move forward/backward; otherwise Z/S move vertically."""
         speed = MOVE_SPEED * dt
         fwd, rgt = self.forward_xz(), self.right_xz()
-        if 'z' in keys: self.pos[0] -= fwd[0]*speed; self.pos[1] += fwd[1]*speed; self.pos[2] -= fwd[2]*speed
-        if 's' in keys: self.pos[0] += fwd[0]*speed; self.pos[1] -= fwd[1]*speed; self.pos[2] += fwd[2]*speed
+        if panning:
+            if 'z' in keys: self.pos[0] -= fwd[0]*speed; self.pos[1] += fwd[1]*speed; self.pos[2] -= fwd[2]*speed
+            if 's' in keys: self.pos[0] += fwd[0]*speed; self.pos[1] -= fwd[1]*speed; self.pos[2] += fwd[2]*speed
+        else:
+            up = self.up_vector()
+            if 'z' in keys: self.pos[0] += up[0]*speed; self.pos[1] += up[1]*speed; self.pos[2] += up[2]*speed
+            if 's' in keys: self.pos[0] -= up[0]*speed; self.pos[1] -= up[1]*speed; self.pos[2] -= up[2]*speed
         if 'q' in keys: self.pos[0] -= rgt[0]*speed; self.pos[2] -= rgt[2]*speed
         if 'd' in keys: self.pos[0] += rgt[0]*speed; self.pos[2] += rgt[2]*speed
 
