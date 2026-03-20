@@ -373,8 +373,6 @@ class Scene:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
-        n_before = len(all_polygons(self.root))
-
         if "root" in data:
             def load_group(node_data, parent):
                 for p_data in node_data.get("polygons", []):
@@ -418,10 +416,8 @@ class Scene:
                     [tuple(uv) for uv in q["uvs"]],
                 )
 
-        flat_after = all_polygons(self.root)
-        new_polys  = flat_after[n_before:]
-        if new_polys and self._state is not None:
-            self._state.set_selection(polygons=new_polys)
+        if self._state is not None:
+            self._state.clear_selection()
         if self._state is not None:
             self._state.project_name = data.get("name", "Unnamed Project")  # already English
             self._state.project_path = path
