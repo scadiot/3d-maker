@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import Callable, Literal
 
 from editor.group import Group, Polygon, all_polygons
+from editor.texture_atlas import TextureAtlas
 
 
 SelectionMode = Literal["polygon", "edge", "vertex"]
@@ -42,6 +43,7 @@ class StateManager:
         self._project_name: str = ""   # project name (without extension)
         self._project_path: str = ""   # absolute path to the project JSON file
         self._vertex_glue: bool = False
+        self._textures_atlases: list[TextureAtlas] = []
 
     # ------------------------------------------------------------------ #
     # Accessors (read)                                                     #
@@ -70,6 +72,14 @@ class StateManager:
     @property
     def selected_vertices(self) -> list[tuple[Polygon, int]]:
         return list(self._selected_vertices)
+
+    @property
+    def textures_atlases(self) -> list[TextureAtlas]:
+        return self._textures_atlases
+
+    @textures_atlases.setter
+    def textures_atlases(self, value: list[TextureAtlas]) -> None:
+        self._textures_atlases = value
 
     @property
     def vertex_glue(self) -> bool:

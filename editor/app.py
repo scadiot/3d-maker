@@ -37,6 +37,7 @@ from editor.history       import (HistoryManager, AddPolygonsCommand,
                                    DeletePolygonsCommand, PolyDataCommand,
                                    GroupCommand, UngroupCommand)
 from editor.group         import Group, all_polygons
+from editor.texture_atlas import TextureAtlas
 
 
 class Viewport3D(OpenGLFrame):
@@ -49,7 +50,10 @@ class Viewport3D(OpenGLFrame):
     def initgl(self):
         glEnable(GL_DEPTH_TEST)
         glClearColor(0.08, 0.08, 0.12, 1.0)
-        self._app.scene.load_texture(TEXTURE_PATH)
+        with open(ATLAS_JSON, encoding="utf-8") as f:
+            import json
+            atlas_data = json.load(f)
+        self._app.scene.load_atlas(TextureAtlas(TEXTURE_PATH, atlas_data))
 
     def redraw(self):
         self._app._render()
@@ -110,7 +114,6 @@ class App:
         self.root.bind('<Control-s>', lambda _: self._save_json())
         self.root.bind('<Control-n>', lambda _: self._new_project())
 
-        self.scene.load_atlas(ATLAS_JSON)
         self.viewport.animate = 1
         self._update_loop()
         self.root.mainloop()

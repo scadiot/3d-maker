@@ -6,7 +6,7 @@ import math
 import tkinter as tk
 from PIL import Image, ImageTk
 from OpenGL.GL import (
-    glGenTextures, glBindTexture, glTexImage2D, glTexParameteri,
+    glGenTextures, glDeleteTextures, glBindTexture, glTexImage2D, glTexParameteri,
     glEnable, glDisable, glCullFace, glFrontFace, glBegin, glEnd,
     glColor3f, glColor4f, glTexCoord2f, glVertex3f, glLineWidth, glPointSize,
     glBlendFunc,
@@ -18,6 +18,7 @@ from OpenGL.GL import (
 )
 
 from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
+from editor.texture_atlas import TextureAtlas
 from editor import math3d
 from editor.group import Group, all_polygons, iter_polygons, is_visible
 
@@ -149,9 +150,13 @@ class Scene:
             self._sel_idx_fb = value
 
     # ── Loading ───────────────────────────────────────────────────────────────
-    def load_atlas(self, json_path):
-        with open(json_path, encoding="utf-8") as f:
-            self.atlas_data = json.load(f)
+    def load_atlas(self, atlas: TextureAtlas) -> None:
+        """Loads a TextureAtlas: frees the old GPU texture, loads the new image and atlas data."""
+        if self.poly_texture:
+            glDeleteTextures(1, [self.poly_texture])
+            self.poly_texture = 0
+        self.load_texture(atlas.image_path)
+        self.atlas_data = atlas.atlas_data if atlas.atlas_data is not None else {}
 
     def load_texture(self, path):
         """Loads a PNG texture into OpenGL via PIL."""
@@ -366,8 +371,17 @@ class Scene:
                 ],
             }
         project_name = self._state.project_name if self._state is not None else ""
+        atlases = []
+        if self._state is not None:
+            atlases = [
+                {"image_path": ta.image_path, "atlas_data": ta.atlas_data}
+                for ta in self._state.textures_atlases
+            ]
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"name": project_name, "root": serialize_group(self.root)}, f, indent=2, ensure_ascii=False)
+            json.dump(
+                {"name": project_name, "textures_atlases": atlases, "root": serialize_group(self.root)},
+                f, indent=2, ensure_ascii=False,
+            )
 
     def load_json(self, path):
         """Imports a scene from a JSON file (appends to existing polygons)."""
@@ -422,6 +436,12 @@ class Scene:
         if self._state is not None:
             self._state.project_name = data.get("name", "Unnamed Project")  # already English
             self._state.project_path = path
+            self._state.textures_atlases = [
+                TextureAtlas(ta["image_path"], ta.get("atlas_data"))
+                for ta in data.get("textures_atlases", [])
+            ]
+            if self._state.textures_atlases:
+                self.load_atlas(self._state.textures_atlases[0])
         self._emit_scene_changed("polygons_added")
 
     # ── Edge operations ───────────────────────────────────────────────────────
