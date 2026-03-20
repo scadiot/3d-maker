@@ -322,6 +322,11 @@ class App:
             d.line([s-4, s//2+3, s-4, s-4], fill=c, width=2)
             d.line([s-7, s-4, s-4, s-4],    fill=c, width=2)
 
+        def ico_snap_grid(d, s, c):
+            for i in [4, s//2, s-4]:
+                d.line([i, 4, i, s-4], fill=c, width=1)
+                d.line([4, i, s-4, i], fill=c, width=1)
+
         def ico_translate(d, s, c):
             cx, cy, a = s//2, s//2, 6
             for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
@@ -436,6 +441,9 @@ class App:
                                  activeforeground='#c8c8d8')
         snap_menu.pack(side=tk.LEFT, padx=2, pady=4)
 
+        self._btn_snap_grid = add_btn(make_icon(ico_snap_grid), self._toggle_snap_grid,
+                                      "Grid snap")
+
     # ── Second toolbar ────────────────────────────────────────────────────────
     def _build_toolbar2(self):
         BG      = '#16161f'
@@ -480,6 +488,10 @@ class App:
         v = float(self._snap_var.get())
         self.gizmo.translate_snap = v
         self.gizmo.scale_snap     = v
+
+    def _toggle_snap_grid(self):
+        self.gizmo.snap_to_grid = not self.gizmo.snap_to_grid
+        self._btn_snap_grid.config(bg='#2d4080' if self.gizmo.snap_to_grid else '#16161f')
 
     def _sync_toolbar2_btns(self):
         two_edges = len(self.state.selected_edges) == 2

@@ -65,6 +65,7 @@ class Gizmo:
         self.mode           = 'translate'
         self.translate_snap = 0.5
         self.scale_snap     = 0.5
+        self.snap_to_grid   = False
 
         # Shared drag state
         self.dragging_axis        = None
@@ -257,6 +258,16 @@ class Gizmo:
         else:
             self._update_scale_drag(mx, my, state, camera)
 
+    # ── Translate snap helper ─────────────────────────────────────────────────
+    def _snap_move(self, delta, center, axis_dir):
+        snap = self.translate_snap
+        if self.snap_to_grid:
+            proj    = math3d.dot(center, axis_dir)
+            snapped = round((proj + delta) / snap) * snap
+            return math3d.vscale(axis_dir, snapped - proj)
+        else:
+            return math3d.vscale(axis_dir, round(delta / snap) * snap)
+
     # ── Translate drag ────────────────────────────────────────────────────────
     def _start_translate_drag(self, axis, mx, my, state, camera):
         self.dragging_axis = axis
@@ -311,8 +322,7 @@ class Gizmo:
             t    = math3d.ray_line_closest_s(tuple(camera.pos),
                                              camera.screen_ray(mx, my),
                                              center, axis_dir)
-            move = math3d.vscale(axis_dir,
-                                 round((t - self.drag_axis_t0) / self.translate_snap) * self.translate_snap)
+            move = self._snap_move(t - self.drag_axis_t0, center, axis_dir)
             poly_updates = {}
             for (poly, vi), start_v in self.drag_start_vertex_verts.items():
                 poly_updates.setdefault(poly, {})[vi] = math3d.vadd(start_v, move)
@@ -331,8 +341,7 @@ class Gizmo:
             t    = math3d.ray_line_closest_s(tuple(camera.pos),
                                              camera.screen_ray(mx, my),
                                              center, axis_dir)
-            move = math3d.vscale(axis_dir,
-                                 round((t - self.drag_axis_t0) / self.translate_snap) * self.translate_snap)
+            move = self._snap_move(t - self.drag_axis_t0, center, axis_dir)
             poly_updates = {}
             for (poly, vi), start_v in self.drag_start_edge_verts.items():
                 poly_updates.setdefault(poly, {})[vi] = math3d.vadd(start_v, move)
@@ -349,8 +358,7 @@ class Gizmo:
             t    = math3d.ray_line_closest_s(tuple(camera.pos),
                                              camera.screen_ray(mx, my),
                                              center, axis_dir)
-            move = math3d.vscale(axis_dir,
-                                 round((t - self.drag_axis_t0) / self.translate_snap) * self.translate_snap)
+            move = self._snap_move(t - self.drag_axis_t0, center, axis_dir)
             for poly, start_verts in self.drag_start_verts_all.items():
                 poly.vertices = [math3d.vadd(v, move) for v in start_verts]
             state.notify_polygon_transformed(list(self.drag_start_verts_all.keys()))
