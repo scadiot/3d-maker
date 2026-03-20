@@ -19,7 +19,7 @@ from OpenGL.GL import (
 
 from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
 from editor.texture_atlas import TextureAtlas
-from editor import math3d
+from editor import math3d, serializer
 from editor.group import Group, all_polygons, iter_polygons, is_visible
 
 
@@ -364,95 +364,11 @@ class Scene:
     # ── Save / Load ───────────────────────────────────────────────────────────
     def save_json(self, path):
         """Exports the scene to a hierarchical JSON file."""
-        def serialize_group(g):
-            return {
-                "name":     g.name,
-                "groups":   [serialize_group(c) for c in g.children],
-                "polygons": [
-                    {
-                        "vertices":         [[round(v, 6) for v in vert] for vert in p.vertices],
-                        "uvs":              [[round(u, 6), round(v, 6)] for u, v in p.uvs],
-                        "texture_atlas_id": p.texture_atlas_id,
-                    }
-                    for p in g.polygons
-                ],
-            }
-        project_name = self._state.project_name if self._state is not None else ""
-        atlases = []
-        if self._state is not None:
-            atlases = [
-                {"id": ta.id, "image_path": ta.image_path, "atlas_data": ta.atlas_data}
-                for ta in self._state.textures_atlases
-            ]
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(
-                {"name": project_name, "textures_atlases": atlases, "root": serialize_group(self.root)},
-                f, indent=2, ensure_ascii=False,
-            )
+        serializer.save_json(self, path)
 
     def load_json(self, path):
         """Imports a scene from a JSON file (appends to existing polygons)."""
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-
-        if "root" in data:
-            def load_group(node_data, parent):
-                for p_data in node_data.get("polygons", []):
-                    poly = parent.add_polygon(
-                        [tuple(v) for v in p_data["vertices"]],
-                        [tuple(uv) for uv in p_data["uvs"]],
-                    )
-                    poly.texture_atlas_id = p_data.get("texture_atlas_id", 0)
-                for g_data in node_data.get("groups", []):
-                    child = parent.add_group(g_data.get("name", "Group"))
-                    load_group(g_data, child)
-                # Backward compatibility: old format with mixed "children"
-                for child_data in node_data.get("children", []):
-                    if "vertices" in child_data:
-                        parent.add_polygon(
-                            [tuple(v) for v in child_data["vertices"]],
-                            [tuple(uv) for uv in child_data["uvs"]],
-                        )
-                    else:
-                        child = parent.add_group(child_data.get("name", "Group"))
-                        load_group(child_data, child)
-            load_group(data["root"], self.root)
-
-        else:
-            # Old flat format (backward compatibility)
-            for p in data.get("polygons", []):
-                self.root.add_polygon(
-                    [tuple(v) for v in p["vertices"]],
-                    [tuple(uv) for uv in p["uvs"]],
-                )
-            for q in data.get("quads", []):
-                center = tuple(q["position"])
-                hw     = q["size"][0] / 2
-                hh     = q["size"][1] / 2
-                if "x_axis" in q and "y_axis" in q:
-                    wa = tuple(q["x_axis"])
-                    ha = tuple(q["y_axis"])
-                else:
-                    wa, ha = math3d.perp_basis(tuple(q["orientation"]))
-                self.root.add_polygon(
-                    math3d.quad_compose(center, wa, ha, hw, hh),
-                    [tuple(uv) for uv in q["uvs"]],
-                )
-
-        if self._state is not None:
-            self._state.clear_selection()
-        if self._state is not None:
-            self._state.project_name = data.get("name", "Unnamed Project")  # already English
-            self._state.project_path = path
-            atlases = []
-            for ta in data.get("textures_atlases", []):
-                atlas = TextureAtlas(ta["image_path"], ta.get("atlas_data"))
-                atlas.id = ta.get("id", 0)
-                atlases.append(atlas)
-            self._state.textures_atlases = atlases
-            for atlas in self._state.textures_atlases:
-                self.load_atlas(atlas)
-        self._emit_scene_changed("polygons_added")
+        serializer.load_json(self, path)
 
     # ── Edge operations ───────────────────────────────────────────────────────
     def create_polygon_from_edges(self, group=None):
