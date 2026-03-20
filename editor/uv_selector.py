@@ -24,6 +24,8 @@ class UVSelector(tk.Frame):
         self._pan_y       = 0.0
         self._drag_last_x = 0
         self._drag_last_y = 0
+        self._uv_drag_vertex = None   # (poly, idx) being dragged, or None
+        self._uv_drag_before = None   # {poly: (vertices_snap, uvs_snap)} before drag
         self._canvas_w    = PANEL_WIDTH
         self._canvas_h    = PANEL_WIDTH
         # Image size at zoom=1 (aspect ratio preserved, fitted to canvas)
@@ -45,7 +47,8 @@ class UVSelector(tk.Frame):
         self._canvas.pack(fill=tk.BOTH, expand=True)
 
         self._canvas.bind('<Configure>',       self._on_configure)
-        self._canvas.bind('<Button-1>',        self._on_click)
+        self._canvas.bind('<Button-1>',        self._on_left_down)
+        self._canvas.bind('<ButtonRelease-1>', self._on_left_up)
         self._canvas.bind('<MouseWheel>',      self._on_wheel)
         self._canvas.bind('<Button-2>',        self._on_middle_down)
         self._canvas.bind('<ButtonRelease-2>', self._on_middle_up)
@@ -118,6 +121,39 @@ class UVSelector(tk.Frame):
         y = self._pan_y + (1.0 - v) * self._fit_h * self._zoom
         return x, y
 
+    def _canvas_to_uv(self, cx, cy):
+        u = (cx - self._pan_x) / (self._fit_w * self._zoom)
+        v = 1.0 - (cy - self._pan_y) / (self._fit_h * self._zoom)
+        return u, v
+
+    def _get_visible_uv_vertices(self):
+        """Returns list of (poly, idx) for all currently visible UV vertices."""
+        state = getattr(self._scene, '_state', None)
+        if state is None:
+            return []
+        mode = state.selection_mode
+        if mode == "polygon":
+            return [(poly, i) for poly in state.selected_polygons
+                    for i in range(len(poly.uvs))]
+        elif mode == "edge":
+            result = []
+            for poly, i in state.selected_edges:
+                result.append((poly, i))
+                result.append((poly, (i + 1) % len(poly.uvs)))
+            return result
+        elif mode == "vertex":
+            return list(state.selected_vertices)
+        return []
+
+    def _hit_uv_vertex(self, cx, cy, radius=6):
+        """Returns (poly, idx) of the first UV vertex within radius pixels, or None."""
+        for poly, idx in self._get_visible_uv_vertices():
+            u, v = poly.uvs[idx]
+            vx, vy = self._uv_to_canvas(u, v)
+            if abs(cx - vx) <= radius and abs(cy - vy) <= radius:
+                return poly, idx
+        return None
+
     def _draw_uv_overlay(self):
         state = getattr(self._scene, '_state', None)
         if state is None:
@@ -185,26 +221,41 @@ class UVSelector(tk.Frame):
         self._canvas.config(cursor='crosshair')
 
     def _on_motion(self, event):
-        if not (event.state & 0x0200):   # button 2 not held → do nothing
-            return
-        dx = event.x - self._drag_last_x
-        dy = event.y - self._drag_last_y
-        self._drag_last_x = event.x
-        self._drag_last_y = event.y
-        self._pan_x += dx
-        self._pan_y += dy
-        self._clamp_pan()
-        self._redraw()
+        if event.state & 0x0200:   # button 2 held → pan
+            dx = event.x - self._drag_last_x
+            dy = event.y - self._drag_last_y
+            self._drag_last_x = event.x
+            self._drag_last_y = event.y
+            self._pan_x += dx
+            self._pan_y += dy
+            self._clamp_pan()
+            self._redraw()
+        elif (event.state & 0x0100) and self._uv_drag_vertex is not None:
+            poly, idx = self._uv_drag_vertex
+            u, v = self._canvas_to_uv(event.x, event.y)
+            u = max(0.0, min(1.0, u))
+            v = max(0.0, min(1.0, v))
+            uvs = list(poly.uvs)
+            uvs[idx] = (u, v)
+            poly.uvs = uvs
+            state = getattr(self._scene, '_state', None)
+            if state is not None:
+                state.notify_polygon_transformed([poly])
+            self._redraw()
 
-    # ── Left click → UV assignment ────────────────────────────────────────────
-    def _on_click(self, event):
-        # Coordinates in fit image space (zoom=1)
+    # ── Left click / UV vertex drag ───────────────────────────────────────────
+    def _on_left_down(self, event):
+        hit = self._hit_uv_vertex(event.x, event.y)
+        if hit is not None:
+            poly = hit[0]
+            self._uv_drag_vertex = hit
+            self._uv_drag_before = {poly: (list(poly.vertices), list(poly.uvs))}
+            return
+        # No vertex hit → UV assignment
         img_x = (event.x - self._pan_x) / self._zoom
         img_y = (event.y - self._pan_y) / self._zoom
-        # Reproject to atlas pixel coordinates
         atlas_x = int(img_x * self._scene.atlas_w / self._fit_w)
         atlas_y = int(img_y * self._scene.atlas_h / self._fit_h)
-        # Before snapshot for history
         if self._on_uv_assigned:
             polys = self._scene._state.selected_polygons if self._scene._state else []
             before = {p: (list(p.vertices), list(p.uvs)) for p in polys}
@@ -213,6 +264,15 @@ class UVSelector(tk.Frame):
             self._on_uv_assigned(before, after)
         else:
             self._scene.assign_uv_at_atlas_pixel(atlas_x, atlas_y)
+
+    def _on_left_up(self, event):
+        if self._uv_drag_vertex is not None and self._uv_drag_before is not None:
+            poly = self._uv_drag_vertex[0]
+            after = {poly: (list(poly.vertices), list(poly.uvs))}
+            if self._on_uv_assigned:
+                self._on_uv_assigned(self._uv_drag_before, after)
+        self._uv_drag_vertex = None
+        self._uv_drag_before = None
 
     # ── Utility ───────────────────────────────────────────────────────────────
     def _clamp_pan(self):
