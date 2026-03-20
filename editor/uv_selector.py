@@ -53,6 +53,11 @@ class UVSelector(tk.Frame):
 
         self._load_texture()
 
+        state = getattr(scene, '_state', None)
+        if state is not None:
+            state.subscribe("selection_changed",   lambda **_: self._redraw())
+            state.subscribe("polygon_transformed", lambda **_: self._redraw())
+
     # ── Loading ───────────────────────────────────────────────────────────────
     def _load_texture(self):
         try:
@@ -106,6 +111,58 @@ class UVSelector(tk.Frame):
         self._canvas.delete('all')
         self._canvas.create_image(int(self._pan_x), int(self._pan_y),
                                    anchor='nw', image=self._photo)
+        self._draw_uv_overlay()
+
+    def _uv_to_canvas(self, u, v):
+        x = self._pan_x + u * self._fit_w * self._zoom
+        y = self._pan_y + (1.0 - v) * self._fit_h * self._zoom
+        return x, y
+
+    def _draw_uv_overlay(self):
+        state = getattr(self._scene, '_state', None)
+        if state is None:
+            return
+
+        mode = state.selection_mode
+
+        if mode == "polygon":
+            polys = state.selected_polygons
+            for poly in polys:
+                n = len(poly.uvs)
+                if n < 2:
+                    continue
+                # edges
+                for i in range(n):
+                    u0, v0 = poly.uvs[i]
+                    u1, v1 = poly.uvs[(i + 1) % n]
+                    x0, y0 = self._uv_to_canvas(u0, v0)
+                    x1, y1 = self._uv_to_canvas(u1, v1)
+                    self._canvas.create_line(x0, y0, x1, y1, fill='#ff8800', width=1)
+                # vertices
+                for u, v in poly.uvs:
+                    cx, cy = self._uv_to_canvas(u, v)
+                    self._canvas.create_oval(cx-3, cy-3, cx+3, cy+3,
+                                             fill='#ffffff', outline='#ff8800', width=1)
+
+        elif mode == "edge":
+            for poly, i in state.selected_edges:
+                n = len(poly.uvs)
+                u0, v0 = poly.uvs[i]
+                u1, v1 = poly.uvs[(i + 1) % n]
+                x0, y0 = self._uv_to_canvas(u0, v0)
+                x1, y1 = self._uv_to_canvas(u1, v1)
+                self._canvas.create_line(x0, y0, x1, y1, fill='#4488ff', width=2)
+                for u, v in (poly.uvs[i], poly.uvs[(i + 1) % n]):
+                    cx, cy = self._uv_to_canvas(u, v)
+                    self._canvas.create_oval(cx-3, cy-3, cx+3, cy+3,
+                                             fill='#ffffff', outline='#4488ff', width=1)
+
+        elif mode == "vertex":
+            for poly, i in state.selected_vertices:
+                u, v = poly.uvs[i]
+                cx, cy = self._uv_to_canvas(u, v)
+                self._canvas.create_oval(cx-4, cy-4, cx+4, cy+4,
+                                         fill='#44ff88', outline='#ffffff', width=1)
 
     # ── Zoom (mouse wheel) ────────────────────────────────────────────────────
     def _on_wheel(self, event):

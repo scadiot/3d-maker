@@ -507,6 +507,8 @@ class Scene:
             for poly in polys:
                 n = len(poly.vertices)
                 poly.uvs = [corners[i % 4] for i in range(n)]
+            if self._state:
+                self._state._emit("polygon_transformed")
 
     def assign_uv_from_atlas_click(self, event_pos):
         """Applies atlas UVs to the selected polygon based on a click in the preview."""
