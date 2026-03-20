@@ -1,5 +1,5 @@
 # ── Dimensions ────────────────────────────────────────────────────────────────
-PANEL_WIDTH    = 300
+PANEL_WIDTH    = 500
 VIEW_WIDTH     = 1670
 HEIGHT         = 1080
 FOV            = 60.0

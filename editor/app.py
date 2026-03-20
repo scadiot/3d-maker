@@ -21,7 +21,7 @@ from editor.constants import (PANEL_WIDTH, VIEW_WIDTH, HEIGHT,
 
 _SEP_WIDTH           = 5
 _PANEL_MIN_WIDTH     = 200
-_PANEL_MAX_WIDTH     = 700
+_PANEL_MAX_WIDTH     = 1500
 _TOTAL_CONTENT_WIDTH = PANEL_WIDTH + VIEW_WIDTH
 
 SNAP_VALUES = ["1", "0.5", "0.25", "0.1", "0.05", "0.01"]
