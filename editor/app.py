@@ -690,6 +690,7 @@ class App:
         self.viewport.bind('<Button-2>',        self._on_middle_down)
         self.viewport.bind('<ButtonRelease-2>', self._on_middle_up)
         self.viewport.bind('<Motion>',          self._on_mouse_motion)
+        self.viewport.bind('<B2-Motion>',       self._on_pan_motion)
         self.viewport.bind('<MouseWheel>',      self._on_mouse_wheel)
         self.root.bind('<KeyPress>',            self._on_key_press)
         self.root.bind('<KeyRelease>',          self._on_key_release)
@@ -725,16 +726,20 @@ class App:
 
     def _on_mouse_motion(self, event):
         self.mouse_x, self.mouse_y = event.x, event.y
-        if self.panning:
-            dx = event.x_root - self.pan_last_x
-            dy = event.y_root - self.pan_last_y
-            if dx or dy:
-                self.camera.apply_mouse_look(dx, dy)
-                cx = self.viewport.winfo_rootx() + self.viewport.winfo_width() // 2
-                cy = self.viewport.winfo_rooty() + self.viewport.winfo_height() // 2
-                ctypes.windll.user32.SetCursorPos(cx, cy)
-                self.pan_last_x = cx
-                self.pan_last_y = cy
+
+    def _on_pan_motion(self, event):
+        self.mouse_x, self.mouse_y = event.x, event.y
+        if not self.panning:
+            return
+        dx = event.x_root - self.pan_last_x
+        dy = event.y_root - self.pan_last_y
+        if dx or dy:
+            self.camera.apply_mouse_look(dx, dy)
+            cx = self.viewport.winfo_rootx() + self.viewport.winfo_width() // 2
+            cy = self.viewport.winfo_rooty() + self.viewport.winfo_height() // 2
+            ctypes.windll.user32.SetCursorPos(cx, cy)
+            self.pan_last_x = cx
+            self.pan_last_y = cy
 
     # ── Viewport focus ────────────────────────────────────────────────────────
     def _on_viewport_focus_in(self, _event):
