@@ -172,23 +172,23 @@ class Gizmo:
     # ── Drawing ───────────────────────────────────────────────────────────────
     def draw(self, state, camera):
         if state.selected_edges:
-            self._draw_translate(self._edge_center(state), camera, self.dragging_axis)
+            self._draw_translate(self._snap_pos(self._edge_center(state)), camera, self.dragging_axis)
             return
         if state.selected_vertices:
-            self._draw_translate(self._vertex_center(state), camera, self.dragging_axis)
+            self._draw_translate(self._snap_pos(self._vertex_center(state)), camera, self.dragging_axis)
             return
         polys = state.selected_polygons
         if not polys:
             return
         if len(polys) > 1:
-            center = _polys_center(polys)
+            center = self._snap_pos(_polys_center(polys))
             if self.mode == 'rotate':
                 self._draw_rotate(center, camera, self.dragging_axis)
             else:
                 self._draw_translate(center, camera, self.dragging_axis)
         else:
             q = polys[-1].vertices
-            c = math3d.poly_center(q)
+            c = self._snap_pos(math3d.poly_center(q))
             if self.mode == 'translate':
                 self._draw_translate(c, camera, self.dragging_axis)
             elif self.mode == 'rotate':
@@ -239,11 +239,11 @@ class Gizmo:
     # ── Picking ──────────────────────────────────────────────────────────────
     def pick_translate_axis(self, mx, my, state, camera):
         if state.selected_edges:
-            center = self._edge_center(state)
+            center = self._snap_pos(self._edge_center(state))
         elif state.selected_vertices:
-            center = self._vertex_center(state)
+            center = self._snap_pos(self._vertex_center(state))
         elif state.selected_polygons:
-            center = _polys_center(state.selected_polygons)
+            center = self._snap_pos(_polys_center(state.selected_polygons))
         else:
             return None
         scale  = self._gizmo_scale(center, camera)
@@ -276,7 +276,7 @@ class Gizmo:
     def pick_rotate_axis(self, mx, my, state, camera):
         polys = state.selected_polygons
         if not polys: return None
-        center = _polys_center(polys)
+        center = self._snap_pos(_polys_center(polys))
         scale  = self._gizmo_scale(center, camera)
         N = 48;  best, best_d = None, 10.0
         for name, (axis_dir, _) in GIZMO_AXES.items():
@@ -391,7 +391,7 @@ class Gizmo:
                 self.drag_start_edge_verts[(poly, ei)]              = tuple(q[ei])
                 self.drag_start_edge_verts[(poly, (ei+1) % len(q))] = tuple(q[(ei+1) % len(q)])
             self.drag_start_verts_all = {}
-            center = self._edge_center(state)
+            center = self._snap_pos(self._edge_center(state))
             self.drag_before_snapshot = {}
             for poly, _ in self.drag_start_edge_verts:
                 if poly not in self.drag_before_snapshot:
@@ -404,7 +404,7 @@ class Gizmo:
                 if vi < len(q):
                     self.drag_start_vertex_verts[(poly, vi)] = tuple(q[vi])
             self.drag_start_verts_all = {}
-            center = self._vertex_center(state)
+            center = self._snap_pos(self._vertex_center(state))
             self.drag_before_snapshot = {}
             for poly, _ in self.drag_start_vertex_verts:
                 if poly not in self.drag_before_snapshot:
@@ -415,8 +415,9 @@ class Gizmo:
             polys = state.selected_polygons
             self.drag_start_verts_all = {p: list(p.vertices) for p in polys}
             cs = [math3d.poly_center(v) for v in self.drag_start_verts_all.values()]
-            center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
-                      sum(c[2] for c in cs)/len(cs)) if cs else (0.0, 0.0, 0.0)
+            raw_center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
+                          sum(c[2] for c in cs)/len(cs)) if cs else (0.0, 0.0, 0.0)
+            center = self._snap_pos(raw_center)
             self.drag_before_snapshot = {p: list(vs)
                                          for p, vs in self.drag_start_verts_all.items()}
         # ── Vertex glue ───────────────────────────────────────────────────────
@@ -524,7 +525,7 @@ class Gizmo:
             for poly in {p for p, _ in glued}:
                 if poly not in self.drag_before_snapshot:
                     self.drag_before_snapshot[poly] = list(poly.vertices)
-        self.drag_center  = _polys_center(polys)
+        self.drag_center  = self._snap_pos(_polys_center(polys))
         axis_dir          = GIZMO_AXES[axis][0]
         self.drag_plane_u, self.drag_plane_v = math3d.perp_basis(axis_dir)
         hit = math3d.ray_plane_intersect(tuple(camera.pos),
@@ -644,6 +645,11 @@ class Gizmo:
         n = len(verts)
         return (sum(v[0] for v in verts)/n, sum(v[1] for v in verts)/n,
                 sum(v[2] for v in verts)/n)
+
+    def _snap_pos(self, pos):
+        """Snap a 3-D position to the nearest translate-snap grid point."""
+        s = self.translate_snap
+        return (round(pos[0] / s) * s, round(pos[1] / s) * s, round(pos[2] / s) * s)
 
     def _gizmo_scale(self, center, camera):
         return max(0.5, math3d.vlength(math3d.vsub(tuple(camera.pos), center)) * 0.2)
