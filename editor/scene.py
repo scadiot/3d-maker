@@ -156,7 +156,11 @@ class Scene:
             glDeleteTextures(1, [self.poly_texture])
             self.poly_texture = 0
         self.load_texture(atlas.image_path)
-        self.atlas_data = atlas.atlas_data if atlas.atlas_data is not None else {}
+        data = atlas.atlas_data
+        if isinstance(data, str) and data:
+            with open(data, encoding="utf-8") as f:
+                data = json.load(f)
+        self.atlas_data = data if data is not None else {}
 
     def load_texture(self, path):
         """Loads a PNG texture into OpenGL via PIL."""

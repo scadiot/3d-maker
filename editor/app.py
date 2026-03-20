@@ -50,10 +50,10 @@ class Viewport3D(OpenGLFrame):
     def initgl(self):
         glEnable(GL_DEPTH_TEST)
         glClearColor(0.08, 0.08, 0.12, 1.0)
-        with open(ATLAS_JSON, encoding="utf-8") as f:
-            import json
-            atlas_data = json.load(f)
-        self._app.scene.load_atlas(TextureAtlas(TEXTURE_PATH, atlas_data))
+        ta = TextureAtlas(TEXTURE_PATH, ATLAS_JSON)
+        self._app.scene.load_atlas(ta)
+        if not self._app.state.textures_atlases:
+            self._app.state.textures_atlases = [ta]
 
     def redraw(self):
         self._app._render()
