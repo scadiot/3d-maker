@@ -424,22 +424,6 @@ class Scene:
         self._emit_scene_changed("polygons_added")
 
     # ── Edge operations ───────────────────────────────────────────────────────
-    def rapprocher_edges(self):
-        """Moves the second polygon to align its edge center with the first polygon's edge center."""
-        if self._state is None:
-            return
-        edges = self._state.selected_edges
-        if len(edges) != 2:
-            return
-        poly1, ei1 = edges[0]
-        poly2, ei2 = edges[1]
-        q1 = poly1.vertices
-        q2 = poly2.vertices
-        c1 = math3d.vscale(math3d.vadd(tuple(q1[ei1]), tuple(q1[(ei1+1) % len(q1)])), 0.5)
-        c2 = math3d.vscale(math3d.vadd(tuple(q2[ei2]), tuple(q2[(ei2+1) % len(q2)])), 0.5)
-        delta = math3d.vsub(c1, c2)
-        poly2.vertices = [math3d.vadd(tuple(v), delta) for v in q2]
-
     def create_polygon_from_edges(self, group=None):
         """Creates a new polygon (quad) by connecting the two selected edges."""
         if self._state is None:

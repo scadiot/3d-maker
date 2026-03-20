@@ -172,8 +172,6 @@ class App:
         m_poly.add_command(label="Rotate UVs", accelerator="R",
                            command=self._cmd_rotate_uvs)
         m_poly.add_separator()
-        m_poly.add_command(label="Align edges",
-                           command=self._cmd_rapprocher_edges)
         m_poly.add_command(label="Create polygon from edges",
                            command=self._cmd_create_from_edges)
         menubar.add_cascade(label="Polygon", menu=m_poly)
@@ -478,8 +476,6 @@ class App:
                 "Rotate UVs", "R")
         self._sep_edges = tk.Frame(self.toolbar2, width=1, bg='#38384a')
         self._sep_edges.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
-        self._btn_rapprocher = add_btn(self._cmd_rapprocher_edges,
-                                       "Align edges")
         self._btn_create_from_edges = add_btn(self._cmd_create_from_edges,
                                               "Create polygon from edges")
         self._sync_toolbar2_btns()
@@ -495,7 +491,7 @@ class App:
 
     def _sync_toolbar2_btns(self):
         two_edges = len(self.state.selected_edges) == 2
-        widgets = [self._sep_edges, self._btn_rapprocher, self._btn_create_from_edges]
+        widgets = [self._sep_edges, self._btn_create_from_edges]
         for w in widgets:
             if two_edges:
                 w.pack(side=tk.LEFT, fill=tk.Y if w is self._sep_edges else tk.NONE,
@@ -851,16 +847,6 @@ class App:
         before = {p: (list(p.vertices), list(p.uvs)) for p in polys}
         self.scene.flip_orientation()
         after = {p: (list(p.vertices), list(p.uvs)) for p in polys}
-        self.history.record(PolyDataCommand(self.state, before, after))
-
-    def _cmd_rapprocher_edges(self) -> None:
-        edges = self.state.selected_edges
-        if len(edges) != 2:
-            return
-        affected = list({poly for poly, _ in edges})
-        before = {p: (list(p.vertices), list(p.uvs)) for p in affected}
-        self.scene.rapprocher_edges()
-        after = {p: (list(p.vertices), list(p.uvs)) for p in affected}
         self.history.record(PolyDataCommand(self.state, before, after))
 
     def _cmd_create_from_edges(self) -> None:
