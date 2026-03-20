@@ -1,4 +1,4 @@
-"""Classe App : initialisation Tkinter/pyopengltk, boucle principale, gestion des événements."""
+"""App class: Tkinter/pyopengltk initialization, main loop, event handling."""
 
 import math
 import time
@@ -39,7 +39,7 @@ from editor.group         import Group, all_polygons
 
 
 class Viewport3D(OpenGLFrame):
-    """Widget OpenGL intégré dans Tkinter via pyopengltk."""
+    """OpenGL widget embedded in Tkinter via pyopengltk."""
 
     def __init__(self, master, app, **kw):
         super().__init__(master, **kw)
@@ -59,7 +59,7 @@ class App:
         self.camera         = Camera()
         self.scene          = Scene()
         self.state          = StateManager(self.scene.root)
-        self.scene._state   = self.state           # injection du StateManager dans Scene
+        self.scene._state   = self.state           # inject StateManager into Scene
         self.gizmo          = Gizmo()
         self.panel_width    = PANEL_WIDTH
         self.right_panel_width = PANEL_WIDTH
@@ -80,7 +80,7 @@ class App:
         self.last_time         = time.time()
         self._viewport_focused = False
 
-    # ── Cycle de vie ──────────────────────────────────────────────────────────
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
     def run(self):
         self.root = tk.Tk()
         self.root.title("Quad Maker")
@@ -115,88 +115,88 @@ class App:
 
     def _on_close(self):
         if self.state.modified:
-            if not messagebox.askyesno("Quitter", "Le projet n'est pas enregistré. Voulez-vous vraiment quitter ?"):
+            if not messagebox.askyesno("Quit", "The project has unsaved changes. Do you really want to quit?"):
                 return
         self.scene.close_tex_preview()
         self.root.destroy()
 
-    # ── Barre de menus ────────────────────────────────────────────────────────
+    # ── Menu bar ──────────────────────────────────────────────────────────────
     def _build_menu(self):
         menubar = tk.Menu(self.root)
 
         # ── File ──────────────────────────────────────────────────────────────
         m_file = tk.Menu(menubar, tearoff=0)
-        m_file.add_command(label="Nouveau projet", accelerator="Ctrl+N",
+        m_file.add_command(label="New project", accelerator="Ctrl+N",
                            command=self._new_project)
         m_file.add_separator()
-        m_file.add_command(label="Enregistrer", accelerator="Ctrl+S",
+        m_file.add_command(label="Save", accelerator="Ctrl+S",
                            command=self._save_json)
-        m_file.add_command(label="Enregistrer sous…",
+        m_file.add_command(label="Save as…",
                            command=self._save_json_dialog)
-        m_file.add_command(label="Charger",
+        m_file.add_command(label="Load",
                            command=self._load_json_dialog)
         m_file.add_separator()
-        m_file.add_command(label="Quitter",
+        m_file.add_command(label="Quit",
                            command=self._on_close)
         menubar.add_cascade(label="File", menu=m_file)
 
         # ── Edit ──────────────────────────────────────────────────────────────
         m_edit = tk.Menu(menubar, tearoff=0)
-        m_edit.add_command(label="Annuler", accelerator="Ctrl+Z",
+        m_edit.add_command(label="Undo", accelerator="Ctrl+Z",
                            command=lambda: self.history.undo())
-        m_edit.add_command(label="Rétablir", accelerator="Ctrl+Y",
+        m_edit.add_command(label="Redo", accelerator="Ctrl+Y",
                            command=lambda: self.history.redo())
         m_edit.add_separator()
-        m_edit.add_command(label="Dupliquer", accelerator="C",
+        m_edit.add_command(label="Duplicate", accelerator="C",
                            command=self._cmd_duplicate)
-        m_edit.add_command(label="Supprimer", accelerator="Suppr",
+        m_edit.add_command(label="Delete", accelerator="Del",
                            command=self._cmd_delete)
         m_edit.add_separator()
-        m_edit.add_command(label="Grouper", accelerator="G",
+        m_edit.add_command(label="Group", accelerator="G",
                            command=self._cmd_group)
-        m_edit.add_command(label="Dégrouper", accelerator="H",
+        m_edit.add_command(label="Ungroup", accelerator="H",
                            command=self._cmd_ungroup)
         menubar.add_cascade(label="Edit", menu=m_edit)
 
         # ── Polygon ───────────────────────────────────────────────────────────
         m_poly = tk.Menu(menubar, tearoff=0)
-        m_poly.add_command(label="Ajouter polygon",
+        m_poly.add_command(label="Add polygon",
                            command=self._cmd_add_polygon)
-        m_poly.add_command(label="Ajouter triangle",
+        m_poly.add_command(label="Add triangle",
                            command=self._cmd_add_triangle)
         m_poly.add_separator()
-        m_poly.add_command(label="Inverser orientation", accelerator="N",
+        m_poly.add_command(label="Flip orientation", accelerator="N",
                            command=self._cmd_flip_orientation)
-        m_poly.add_command(label="Rotation UVs", accelerator="R",
+        m_poly.add_command(label="Rotate UVs", accelerator="R",
                            command=self._cmd_rotate_uvs)
         m_poly.add_separator()
-        m_poly.add_command(label="Rapprocher arêtes",
+        m_poly.add_command(label="Align edges",
                            command=self._cmd_rapprocher_edges)
-        m_poly.add_command(label="Créer polygon depuis arêtes",
+        m_poly.add_command(label="Create polygon from edges",
                            command=self._cmd_create_from_edges)
         menubar.add_cascade(label="Polygon", menu=m_poly)
 
         self.root.config(menu=menubar)
 
-    # ── Barre d'outils ────────────────────────────────────────────────────────
+    # ── Toolbar ───────────────────────────────────────────────────────────────
     def _build_toolbar(self):
         BG      = '#16161f'
         BG_ACT  = '#2a2a3a'
         BG_ON   = '#2d4080'
-        self._BG_DIS = '#1e1e28'   # bouton désactivé
-        IC      = '#c8c8d8'   # couleur icône
-        SZ      = 22           # taille icône en px
+        self._BG_DIS = '#1e1e28'   # disabled button
+        IC      = '#c8c8d8'   # icon color
+        SZ      = 22           # icon size in px
         BTN_SZ  = 34           # taille bouton
 
-        self._icons       = []   # garde les PhotoImage en vie
-        self._gizmo_btns  = {}   # boutons gizmo pour le highlighting
-        self._sel_btns    = {}   # boutons mode sélection
+        self._icons       = []   # keep PhotoImage objects alive
+        self._gizmo_btns  = {}   # gizmo buttons for highlighting
+        self._sel_btns    = {}   # selection mode buttons
 
         self.toolbar = tk.Frame(self.root, bg=BG, height=BTN_SZ + 4)
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
         self.toolbar.pack_propagate(False)
 
-        # ── Fabrique d'icône ──────────────────────────────────────────────────
+        # ── Icon factory ──────────────────────────────────────────────────────
         def make_icon(draw_fn):
             img = Image.new('RGBA', (SZ, SZ), (0, 0, 0, 0))
             draw_fn(ImageDraw.Draw(img), SZ, IC)
@@ -204,7 +204,7 @@ class App:
             self._icons.append(ph)
             return ph
 
-        # ── Fabrique de bouton avec tooltip au survol ─────────────────────────
+        # ── Button factory with hover tooltip ─────────────────────────────────
         def add_btn(icon, cmd, label='', shortcut=''):
             btn = tk.Button(
                 self.toolbar, image=icon, command=cmd,
@@ -247,30 +247,30 @@ class App:
             tk.Frame(self.toolbar, width=1, bg='#38384a').pack(
                 side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
-        # ── Dessins des icônes ────────────────────────────────────────────────
+        # ── Icon drawings ─────────────────────────────────────────────────────
         def ico_new(d, s, c):
             fold = 5
-            # Page avec coin plié en haut à droite
+            # Page with folded top-right corner
             d.polygon([3, 3,  s-3-fold, 3,  s-3, 3+fold,  s-3, s-3,  3, s-3],
                       outline=c, fill='#16161f')
             d.line([s-3-fold, 3, s-3, 3+fold], fill=c, width=1)
-            # Croix «+» au centre
+            # «+» cross at center
             cx, cy = s//2, s//2 + 2
             d.line([cx-3, cy, cx+3, cy], fill=c, width=2)
             d.line([cx, cy-3, cx, cy+3], fill=c, width=2)
 
         def ico_save(d, s, c):
             d.rectangle([3, 4, s-3, s-3], outline=c, width=1)
-            d.rectangle([5, 3, s-7, 8],   fill=c)               # étiquette
-            d.rectangle([s-8, 3, s-5, 7], fill='#16161f')        # fenêtre étiquette
-            d.rectangle([6, 13, s-6, s-4], outline=c, width=1)  # poche
+            d.rectangle([5, 3, s-7, 8],   fill=c)               # label
+            d.rectangle([s-8, 3, s-5, 7], fill='#16161f')        # label window
+            d.rectangle([6, 13, s-6, s-4], outline=c, width=1)  # pocket
 
         def ico_save_current(d, s, c):
             d.rectangle([3, 4, s-3, s-3], outline=c, width=1)
             d.rectangle([5, 3, s-7, 8],   fill=c)
             d.rectangle([s-8, 3, s-5, 7], fill='#16161f')
             d.rectangle([6, 13, s-6, s-4], outline=c, width=1)
-            # petite flèche vers le bas au centre
+            # small downward arrow at center
             cx = s // 2
             d.line([cx, 14, cx, s-6], fill='#16161f', width=2)
             d.polygon([cx-3, s-9, cx+3, s-9, cx, s-5], fill='#16161f')
@@ -292,23 +292,23 @@ class App:
         def ico_duplicate(d, s, c):
             d.rectangle([5, 8, s-4, s-3], outline=c, width=1)
             d.rectangle([3, 3, s-6, s-6], outline=c, width=1)
-            d.rectangle([s-5, 3, s-6+1, s-6+1], fill='#16161f')  # efface angle
+            d.rectangle([s-5, 3, s-6+1, s-6+1], fill='#16161f')  # erase corner
 
         def ico_delete(d, s, c):
             d.rectangle([4, 7, s-4, s-3], outline=c, width=1)
             d.line([4, 7, s-4, 7], fill=c, width=1)
-            d.rectangle([7, 4, s-7, 7], outline=c, width=1)       # poignée
-            d.line([8, 11, 8, s-5],  fill=c, width=1)             # fente g
-            d.line([s-8, 11, s-8, s-5], fill=c, width=1)          # fente d
+            d.rectangle([7, 4, s-7, 7], outline=c, width=1)       # handle
+            d.line([8, 11, 8, s-5],  fill=c, width=1)             # slot left
+            d.line([s-8, 11, s-8, s-5], fill=c, width=1)          # slot right
 
         def ico_group(d, s, c):
-            d.line([4, 4, 4, s-4],   fill=c, width=2)             # crochet g
+            d.line([4, 4, 4, s-4],   fill=c, width=2)             # bracket left
             d.line([4, 4, 7, 4],     fill=c, width=2)
             d.line([4, s-4, 7, s-4], fill=c, width=2)
-            d.line([s-4, 4, s-4, s-4],   fill=c, width=2)         # crochet d
+            d.line([s-4, 4, s-4, s-4],   fill=c, width=2)         # bracket right
             d.line([s-7, 4, s-4, 4],     fill=c, width=2)
             d.line([s-7, s-4, s-4, s-4], fill=c, width=2)
-            d.line([7, s//2, s-7, s//2], fill=c, width=1)         # liaison
+            d.line([7, s//2, s-7, s//2], fill=c, width=1)         # link
 
         def ico_ungroup(d, s, c):
             d.line([4, 4, 4, s//2-3],   fill=c, width=2)
@@ -344,29 +344,29 @@ class App:
             d.polygon([s-3, 3, s-3, 8, s-8, 3], fill=c)
 
         def ico_sel_polygon(d, s, c):
-            # Face sélectionnée : carré avec remplissage tamisé + contour fort
+            # Selected face: square with dimmed fill + strong outline
             d.rectangle([4, 4, s-4, s-4], fill='#404060', outline=c, width=2)
 
         def ico_sel_edge(d, s, c):
-            # Polygone gris + une arête mise en valeur
+            # Grey polygon + highlighted edge
             pts = [s//2, 3, s-3, s-3, 3, s-3]
             d.polygon(pts, outline='#505065')
             d.line([s//2, 3, s-3, s-3], fill=c, width=3)
 
         def ico_sel_vertex(d, s, c):
-            # Polygone gris + un sommet mis en valeur
+            # Grey polygon + highlighted vertex
             pts = [s//2, 3, s-3, s-3, 3, s-3]
             d.polygon(pts, outline='#505065')
             r = 3
             cx, cy = s//2, 3
             d.ellipse([cx-r, cy-r, cx+r, cy+r], fill=c)
 
-        # ── Placement ─────────────────────────────────────────────────────────
-        add_btn(make_icon(ico_new),          self._new_project,       "Nouveau projet (Ctrl+N)")
+        # ── Layout ────────────────────────────────────────────────────────────
+        add_btn(make_icon(ico_new),          self._new_project,       "New project (Ctrl+N)")
         add_sep()
-        add_btn(make_icon(ico_save),         self._save_json_dialog,  "Enregistrer sous…")
-        add_btn(make_icon(ico_save_current), self._save_json,         "Enregistrer (Ctrl+S)")
-        add_btn(make_icon(ico_load),         self._load_json_dialog,  "Charger")
+        add_btn(make_icon(ico_save),         self._save_json_dialog,  "Save as…")
+        add_btn(make_icon(ico_save_current), self._save_json,         "Save (Ctrl+S)")
+        add_btn(make_icon(ico_load),         self._load_json_dialog,  "Load")
         add_sep()
         add_btn(make_icon(ico_polygon),
                 self._cmd_add_polygon,
@@ -377,40 +377,40 @@ class App:
         add_sep()
         add_btn(make_icon(ico_duplicate),
                 self._cmd_duplicate,
-                "Dupliquer", "C")
+                "Duplicate", "C")
         add_btn(make_icon(ico_delete),
                 self._cmd_delete,
-                "Supprimer", "Suppr")
+                "Delete", "Del")
         add_sep()
         add_btn(make_icon(ico_group),
                 self._cmd_group,
-                "Grouper", "G")
+                "Group", "G")
         add_btn(make_icon(ico_ungroup),
                 self._cmd_ungroup,
-                "Dégrouper", "H")
+                "Ungroup", "H")
         add_sep()
 
-        # Boutons gizmo (radio-style) — mis en valeur selon self.gizmo.mode
+        # Gizmo buttons (radio-style) — highlighted based on self.gizmo.mode
         def set_gizmo(mode):
             self.gizmo.mode = mode
             self._sync_gizmo_btns()
 
-        for mode, ifn, lbl in [('translate', ico_translate, "Translater"),
-                                ('rotate',    ico_rotate,    "Rotation"),
-                                ('scale',     ico_scale,     "Échelle")]:
-            b = add_btn(make_icon(ifn), lambda m=mode: set_gizmo(m), lbl, "Espace")
+        for mode, ifn, lbl in [('translate', ico_translate, "Translate"),
+                                ('rotate',    ico_rotate,    "Rotate"),
+                                ('scale',     ico_scale,     "Scale")]:
+            b = add_btn(make_icon(ifn), lambda m=mode: set_gizmo(m), lbl, "Space")
             self._gizmo_btns[mode] = (b, BG, BG_ON)
 
         self._sync_gizmo_btns()
         add_sep()
 
-        # Boutons mode sélection (radio-style)
+        # Selection mode buttons (radio-style)
         def set_sel_mode(mode):
-            self.sel_mode_var.set({'polygon': 'Polygon', 'edge': 'Arête', 'vertex': 'Vertex'}[mode])
+            self.sel_mode_var.set({'polygon': 'Polygon', 'edge': 'Edge', 'vertex': 'Vertex'}[mode])
             self._on_selection_mode_change()
 
         for mode, ifn, lbl in [('polygon', ico_sel_polygon, "Polygon"),
-                                ('edge',    ico_sel_edge,    "Arête"),
+                                ('edge',    ico_sel_edge,    "Edge"),
                                 ('vertex',  ico_sel_vertex,  "Vertex")]:
             b = add_btn(make_icon(ifn), lambda m=mode: set_sel_mode(m), lbl, "E")
             self._sel_btns[mode] = (b, BG, BG_ON)
@@ -418,8 +418,8 @@ class App:
         self._sync_sel_mode_btns()
         add_sep()
 
-        # ── Snap ──────────────────────────────────────────────────────────────
-        tk.Label(self.toolbar, text="Snap :", bg=BG, fg='#c8c8d8',
+        # ── Snap ─────────────────────────────────────────────────────────────
+        tk.Label(self.toolbar, text="Snap:", bg=BG, fg='#c8c8d8',
                  font=('Segoe UI', 8)).pack(side=tk.LEFT, padx=(4, 2))
 
         self._snap_var = tk.StringVar(value=str(self.gizmo.translate_snap))
@@ -434,7 +434,7 @@ class App:
                                  activeforeground='#c8c8d8')
         snap_menu.pack(side=tk.LEFT, padx=2, pady=4)
 
-    # ── Deuxième barre d'outils ───────────────────────────────────────────────
+    # ── Second toolbar ────────────────────────────────────────────────────────
     def _build_toolbar2(self):
         BG      = '#16161f'
         BG_ACT  = '#2a2a3a'
@@ -461,17 +461,17 @@ class App:
             btn.bind('<Leave>', lambda _e, b=btn: b.config(bg=BG))
             return btn
 
-        # ── Placement ─────────────────────────────────────────────────────────
+        # ── Layout ────────────────────────────────────────────────────────────
         add_btn(self._cmd_flip_orientation,
-                "Inverser orientation", "N")
+                "Flip orientation", "N")
         add_btn(self._cmd_rotate_uvs,
-                "Rotation UVs", "R")
+                "Rotate UVs", "R")
         self._sep_edges = tk.Frame(self.toolbar2, width=1, bg='#38384a')
         self._sep_edges.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
         self._btn_rapprocher = add_btn(self._cmd_rapprocher_edges,
-                                       "Rapprocher arêtes")
+                                       "Align edges")
         self._btn_create_from_edges = add_btn(self._cmd_create_from_edges,
-                                              "Créer polygon depuis arêtes")
+                                              "Create polygon from edges")
         self._sync_toolbar2_btns()
 
     def _on_snap_change(self, *_):
@@ -508,7 +508,7 @@ class App:
         for mode, (btn, bg_off, bg_on) in self._sel_btns.items():
             btn.config(bg=bg_on if self.state.selection_mode == mode else bg_off)
 
-    # ── Construction de l'interface ───────────────────────────────────────────
+    # ── UI construction ───────────────────────────────────────────────────────
     def _build_panel(self):
         self.panel = tk.Frame(self.root, width=self.panel_width, bg='#1a1a21')
         self.panel.pack(side=tk.LEFT, fill=tk.Y)
@@ -546,21 +546,21 @@ class App:
     def _update_statusbar(self):
         n = len(self.scene.selected_indices)
         if n == 0:
-            sel_text = 'Aucune sélection'
+            sel_text = 'No selection'
         elif n == 1:
-            sel_text = '1 polygon sélectionné'
+            sel_text = '1 polygon selected'
         else:
-            sel_text = f'{n} polygons sélectionnés'
+            sel_text = f'{n} polygons selected'
         self._status_sel_lbl.config(text=sel_text)
 
         grp = self.state.current_group
-        grp_name = getattr(grp, 'name', None) or 'Racine'
-        self._status_group_lbl.config(text=f'Groupe : {grp_name}')
+        grp_name = getattr(grp, 'name', None) or 'Root'
+        self._status_group_lbl.config(text=f'Group: {grp_name}')
 
-        mode_labels = {'translate': 'Translater', 'rotate': 'Rotation', 'scale': 'Échelle'}
-        sel_mode_labels = {'polygon': 'Polygon', 'edge': 'Arête', 'vertex': 'Vertex'}
-        right = (f"Gizmo : {mode_labels.get(self.gizmo.mode, self.gizmo.mode)}   "
-                 f"Mode : {sel_mode_labels.get(self.state.selection_mode, self.state.selection_mode)}")
+        mode_labels = {'translate': 'Translate', 'rotate': 'Rotate', 'scale': 'Scale'}
+        sel_mode_labels = {'polygon': 'Polygon', 'edge': 'Edge', 'vertex': 'Vertex'}
+        right = (f"Gizmo: {mode_labels.get(self.gizmo.mode, self.gizmo.mode)}   "
+                 f"Mode: {sel_mode_labels.get(self.state.selection_mode, self.state.selection_mode)}")
         self._status_right_lbl.config(text=right)
 
     def _build_resize_bar(self):
@@ -646,7 +646,7 @@ class App:
         self.viewport.config(width=new_vw)
         self.camera.vw = new_vw
 
-    # ── Bindings ──────────────────────────────────────────────────────────────
+    # ── Event bindings ────────────────────────────────────────────────────────
     def _bind_events(self):
         self.viewport.bind('<Button-1>',        self._on_mouse_down)
         self.viewport.bind('<ButtonRelease-1>', self._on_mouse_up)
@@ -657,7 +657,7 @@ class App:
         self.root.bind('<KeyPress>',            self._on_key_press)
         self.root.bind('<KeyRelease>',          self._on_key_release)
 
-    # ── Événements souris ─────────────────────────────────────────────────────
+    # ── Mouse events ──────────────────────────────────────────────────────────
     def _on_mouse_down(self, event):
         self.viewport.focus_set()
         self.mouse_btn1 = True
@@ -695,7 +695,7 @@ class App:
                 self.pan_last_x = cx
                 self.pan_last_y = cy
 
-    # ── Focus viewport ────────────────────────────────────────────────────────
+    # ── Viewport focus ────────────────────────────────────────────────────────
     def _on_viewport_focus_in(self, _event):
         self._viewport_focused = True
 
@@ -703,7 +703,7 @@ class App:
         self._viewport_focused = False
         self.keys_pressed.clear()
 
-    # ── Événements clavier ────────────────────────────────────────────────────
+    # ── Keyboard events ───────────────────────────────────────────────────────
     def _on_key_press(self, event):
         if not self._viewport_focused:
             return
@@ -715,7 +715,7 @@ class App:
         self.keys_pressed.discard(event.keysym.lower())
 
     def _on_selection_mode_change(self, event=None):
-        mode_map = {'Polygon': 'polygon', 'Arête': 'edge', 'Vertex': 'vertex'}
+        mode_map = {'Polygon': 'polygon', 'Edge': 'edge', 'Vertex': 'vertex'}
         new_mode = mode_map[self.sel_mode_var.get()]
         self.state.set_selection_mode(new_mode)
         if new_mode in ('vertex', 'edge'):
@@ -755,10 +755,10 @@ class App:
         if key == 'e':
             modes = ['polygon', 'edge', 'vertex']
             next_mode = modes[(modes.index(self.state.selection_mode) + 1) % len(modes)]
-            self.sel_mode_var.set({'polygon': 'Polygon', 'edge': 'Arête', 'vertex': 'Vertex'}[next_mode])
+            self.sel_mode_var.set({'polygon': 'Polygon', 'edge': 'Edge', 'vertex': 'Vertex'}[next_mode])
             self._on_selection_mode_change()
 
-        if key in ('prior', 'next'):   # Page Up / Page Down
+        if key in ('prior', 'next'):   # PageUp / PageDown
             idx = SNAP_VALUES.index(self._snap_var.get()) if self._snap_var.get() in SNAP_VALUES else 0
             if key == 'prior' and idx > 0:
                 self._snap_var.set(SNAP_VALUES[idx - 1])
@@ -767,10 +767,10 @@ class App:
             self._on_snap_change()
 
 
-    # ── Commandes avec historique ──────────────────────────────────────────────
+    # ── Commands with history ─────────────────────────────────────────────────
 
     def _record_added_polygons(self, before_ids: set) -> None:
-        """Enregistre les polygones ajoutés depuis before_ids comme commande."""
+        """Records newly added polygons (since before_ids) as a history command."""
         new_polys = [p for p in all_polygons(self.scene.root)
                      if id(p) not in before_ids]
         if new_polys:
@@ -853,7 +853,7 @@ class App:
             return
         old_groups = {p: (p.group, p.group.polygons.index(p)) for p in polys}
         parent = self.scene.root
-        new_group = Group(name="Groupe")
+        new_group = Group(name="Group")
         self.history.push(GroupCommand(self.state, polys, old_groups,
                                        new_group, parent))
 
@@ -874,7 +874,7 @@ class App:
         self.history.push(UngroupCommand(self.state, groups_info))
 
     def _handle_mouse_down_3d(self, mx, my):
-        ctrl_held = 'shift_l' in self.keys_pressed
+        ctrl_held = 'shift_l' in self.keys_pressed  # Shift for multi-select
         multi     = len(self.scene.selected_indices) > 1
         sel_mode  = self.state.selection_mode
 
@@ -928,17 +928,17 @@ class App:
     def _new_project(self):
         if self.state.modified:
             if not messagebox.askyesno(
-                "Nouveau projet",
-                "Le projet en cours n'est pas enregistré.\n"
-                "Voulez-vous continuer et perdre les modifications ?",
+                "New project",
+                "The current project has unsaved changes.\n"
+                "Do you want to continue and lose the changes?",
                 icon='warning',
             ):
                 return
-        # Réinitialise la scène
+        # Reset the scene
         self.scene.root.children.clear()
         self.scene.root.polygons.clear()
         self.scene.root.hidden = False
-        # Réinitialise l'état
+        # Reset the state
         self.state._current_group = self.scene.root
         self.state._selected_polygons = []
         self.state._selected_edges = []
@@ -946,7 +946,7 @@ class App:
         self.state._project_path = ""
         self.state._project_name = ""
         self.state._modified = False
-        # Réinitialise l'historique et le gizmo
+        # Reset history and gizmo
         self.history.clear()
         self.gizmo.stop_drag()
         # Notifie les composants
@@ -970,7 +970,7 @@ class App:
             parent=self.root,
             defaultextension=".json",
             filetypes=[("JSON", "*.json")],
-            title="Enregistrer la scène",
+            title="Save scene",
         )
         if path:
             self.state.project_path = path
@@ -981,9 +981,9 @@ class App:
     def _load_json_dialog(self):
         if self.state.modified:
             if not messagebox.askyesno(
-                "Projet non enregistré",
-                "Le projet en cours n'est pas enregistré.\n"
-                "Voulez-vous quand même charger un autre projet et perdre vos modifications ?",
+                "Unsaved project",
+                "The current project has unsaved changes.\n"
+                "Do you still want to load another project and lose your changes?",
                 parent=self.root,
             ):
                 return
@@ -991,10 +991,10 @@ class App:
         path = filedialog.askopenfilename(
             parent=self.root,
             filetypes=[("JSON", "*.json")],
-            title="Charger une scène",
+            title="Load scene",
         )
         if path:
-            # Vider la scène avant le chargement
+            # Clear the scene before loading
             self.scene.root.children.clear()
             self.scene.root.polygons.clear()
             self.state.clear_selection()
@@ -1057,7 +1057,7 @@ class App:
             self.state.set_selection(edges=[edge_ref])
 
     def _apply_selection(self, clicked_idx, ctrl_held):
-        """Applique la sélection selon Ctrl — passe par le StateManager."""
+        """Applies selection based on Shift — goes through the StateManager."""
         flat = all_polygons(self.scene.root)
         if ctrl_held:
             if clicked_idx >= 0 and clicked_idx < len(flat):
@@ -1074,12 +1074,12 @@ class App:
             else:
                 self.state.clear_selection()
 
-    # ── Mise à jour ───────────────────────────────────────────────────────────
+    # ── Update ────────────────────────────────────────────────────────────────
     def _update_title(self):
         name = self.state.project_name or "Unnamed Project"
         title = f"Quad Maker - {name}"
         if self.state.modified:
-            title += " - [non sauvegardé]"
+            title += " - [unsaved]"
         self.root.title(title)
 
     def _update_loop(self):
@@ -1095,7 +1095,7 @@ class App:
 
         self.root.after(32, self._update_loop)
 
-    # ── Rendu ─────────────────────────────────────────────────────────────────
+    # ── Rendering ─────────────────────────────────────────────────────────────
     def _render(self):
         vw = self.viewport.winfo_width() or self.camera.vw
         vh = self.viewport.winfo_height() or self.camera.vh

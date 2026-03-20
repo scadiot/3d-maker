@@ -1,10 +1,10 @@
-"""Historique d'actions — Command Pattern pour undo/redo."""
+"""Action history — Command Pattern for undo/redo."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
 
-# ── Interface de base ──────────────────────────────────────────────────────────
+# ── Base interface ─────────────────────────────────────────────────────────────
 
 class Command(ABC):
     @abstractmethod
@@ -18,7 +18,7 @@ class Command(ABC):
 
 
 class CompoundCommand(Command):
-    """Groupe plusieurs commandes en une seule entrée d'historique."""
+    """Groups multiple commands into a single history entry."""
 
     def __init__(self, cmds: list) -> None:
         self._cmds = list(cmds)
@@ -39,17 +39,17 @@ class HistoryManager:
         self._max = max_size
 
     def clear(self) -> None:
-        """Vide l'historique undo/redo."""
+        """Clears the undo/redo history."""
         self._undo.clear()
         self._redo.clear()
 
     def push(self, cmd: Command) -> None:
-        """Exécute cmd et l'enregistre dans l'historique."""
+        """Executes cmd and records it in the history."""
         cmd.execute()
         self._append(cmd)
 
     def record(self, cmd: Command) -> None:
-        """Enregistre une commande déjà exécutée (ex: drag gizmo)."""
+        """Records an already-executed command (e.g. gizmo drag)."""
         self._append(cmd)
 
     def _append(self, cmd: Command) -> None:
@@ -83,10 +83,10 @@ class HistoryManager:
         return bool(self._redo)
 
 
-# ── Commandes Gizmo ────────────────────────────────────────────────────────────
+# ── Gizmo commands ─────────────────────────────────────────────────────────────
 
 class TransformCommand(Command):
-    """Déplacement / rotation / scale de polygones via le gizmo."""
+    """Translate / rotate / scale of polygons via the gizmo."""
 
     def __init__(self, state, before: dict, after: dict) -> None:
         self._state  = state
@@ -104,10 +104,10 @@ class TransformCommand(Command):
         self._state.notify_polygon_transformed(list(self._before))
 
 
-# ── Commandes Polygones ────────────────────────────────────────────────────────
+# ── Polygon commands ───────────────────────────────────────────────────────────
 
 class AddPolygonsCommand(Command):
-    """Ajout d'un ou plusieurs polygones (add, duplicate, create_from_edges…)."""
+    """Addition of one or more polygons (add, duplicate, create_from_edges…)."""
 
     def __init__(self, state, polys: list) -> None:
         self._state  = state
@@ -127,10 +127,10 @@ class AddPolygonsCommand(Command):
 
 
 class DeletePolygonsCommand(Command):
-    """Suppression de polygones."""
+    """Deletion of polygons."""
 
     def __init__(self, state, saved: list) -> None:
-        # saved : [(Polygon, Group, int)] — polygone, groupe parent, index dans group.polygons
+        # saved: [(Polygon, Group, int)] — polygon, parent group, index in group.polygons
         self._state = state
         self._saved = list(saved)
 
@@ -147,10 +147,10 @@ class DeletePolygonsCommand(Command):
 
 
 class PolyDataCommand(Command):
-    """Mutation de vertices/UVs (rotate_uvs, flip_orientation, rapprocher_edges…)."""
+    """Mutation of vertices/UVs (rotate_uvs, flip_orientation, align_edges…)."""
 
     def __init__(self, state, before: dict, after: dict) -> None:
-        # before/after : {Polygon: (list[vertex], list[uv])}
+        # before/after: {Polygon: (list[vertex], list[uv])}
         self._state  = state
         self._before = before
         self._after  = after
@@ -168,13 +168,13 @@ class PolyDataCommand(Command):
         self._state._emit("scene_changed", change_type="polygon_transformed")
 
 
-# ── Commandes Groupes ──────────────────────────────────────────────────────────
+# ── Group commands ─────────────────────────────────────────────────────────────
 
 class GroupCommand(Command):
-    """Groupement de polygones dans un nouveau sous-groupe."""
+    """Grouping of polygons into a new sub-group."""
 
     def __init__(self, state, polys: list, old_groups: dict, new_group, parent) -> None:
-        # old_groups : {Polygon: (Group, int)} — groupe et index d'origine
+        # old_groups: {Polygon: (Group, int)} — original group and index
         self._state      = state
         self._polys      = list(polys)
         self._old_groups = old_groups
@@ -204,10 +204,10 @@ class GroupCommand(Command):
 
 
 class UngroupCommand(Command):
-    """Dégroupement de polygones."""
+    """Ungrouping of polygons."""
 
     def __init__(self, state, groups_info: list) -> None:
-        # groups_info : [(Group, parent_Group, [(Polygon, int)])]
+        # groups_info: [(Group, parent_Group, [(Polygon, int)])]
         self._state       = state
         self._groups_info = groups_info
 
@@ -235,7 +235,7 @@ class UngroupCommand(Command):
 
 
 class AddGroupCommand(Command):
-    """Création d'un nouveau groupe."""
+    """Creation of a new group."""
 
     def __init__(self, state, group, parent) -> None:
         self._state  = state
@@ -254,7 +254,7 @@ class AddGroupCommand(Command):
 
 
 class DeleteGroupCommand(Command):
-    """Suppression d'un groupe et de tout son contenu."""
+    """Deletion of a group and all its contents."""
 
     def __init__(self, state, group) -> None:
         self._state      = state
@@ -284,7 +284,7 @@ class DeleteGroupCommand(Command):
 
 
 class RenameGroupCommand(Command):
-    """Renommage d'un groupe."""
+    """Renaming of a group."""
 
     def __init__(self, state, group, old_name: str, new_name: str) -> None:
         self._state = state
@@ -304,7 +304,7 @@ class RenameGroupCommand(Command):
 
 
 class MovePolygonCommand(Command):
-    """Déplacement d'un polygone vers un autre groupe (drag & drop)."""
+    """Moving a polygon to another group (drag & drop)."""
 
     def __init__(self, state, poly, old_group, new_group) -> None:
         self._state     = state
@@ -320,7 +320,7 @@ class MovePolygonCommand(Command):
 
 
 class MoveGroupCommand(Command):
-    """Déplacement d'un groupe dans la hiérarchie (drag & drop)."""
+    """Moving a group in the hierarchy (drag & drop)."""
 
     def __init__(self, state, group, old_parent, new_parent) -> None:
         self._state      = state

@@ -19,7 +19,7 @@ python main.py
 - **pyopengltk** — `OpenGLFrame` widget bridging Tkinter ↔ OpenGL
 - **Pillow** — texture atlas loading
 
-**Language**: UI text and code comments are in French.
+**Language**: UI text and code comments are in English.
 **Keyboard layout**: AZERTY (Z/Q/S/D for camera movement).
 
 ---

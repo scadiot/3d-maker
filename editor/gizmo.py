@@ -1,7 +1,7 @@
-"""Classe Gizmo : mode, état drag, dessin et picking.
+"""Gizmo class: mode, drag state, drawing and picking.
 
-Camera et StateManager sont passés en paramètre aux méthodes (pas stockés),
-ce qui évite les imports circulaires.
+Camera and StateManager are passed as parameters to methods (not stored),
+which avoids circular imports.
 """
 
 import math
@@ -15,7 +15,7 @@ from editor.constants import GIZMO_MODES, GIZMO_AXES, SCALE_COLORS
 from editor import math3d
 
 
-# ── Helpers de dessin (privés au module) ──────────────────────────────────────
+# ── Drawing helpers (module-private) ──────────────────────────────────────────
 def _draw_arrow_3d(start, tip, color, selected=False):
     r, g, b = (1.0, 0.9, 0.1) if selected else color
     length = math3d.vlength(math3d.vsub(tip, start))
@@ -53,48 +53,47 @@ def _draw_box_3d(pos, size, r, g, b):
 
 
 def _polys_center(polys):
-    """Barycentre des centres de polygones."""
+    """Centroid of polygon centers."""
     cs = [math3d.poly_center(p.vertices) for p in polys]
     n  = len(cs)
     return (sum(c[0] for c in cs)/n, sum(c[1] for c in cs)/n, sum(c[2] for c in cs)/n)
 
 
-# ── Classe Gizmo ──────────────────────────────────────────────────────────────
+# ── Gizmo class ───────────────────────────────────────────────────────────────
 class Gizmo:
     def __init__(self):
         self.mode           = 'translate'
         self.translate_snap = 0.5
         self.scale_snap     = 0.5
 
-        # État drag partagé
+        # Shared drag state
         self.dragging_axis        = None
         self.drag_start_verts     = None
         self.drag_start_verts_all = {}   # {Polygon: list[verts]}
         self.drag_axis_t0         = 0.0
 
-        # État drag rotation
+        # Rotation drag state
         self.drag_angle0  = 0.0
         self.drag_plane_u = None
         self.drag_plane_v = None
         self.drag_center  = None
 
-        # État drag scale
+        # Scale drag state
         self.drag_hw0  = 0.0
         self.drag_hh0  = 0.0
         self.drag_wa   = None
         self.drag_ha   = None
-        self.drag_poly = None   # Polygon de référence pour le scale
+        self.drag_poly = None   # Reference polygon for scale
 
-        # État drag arêtes : {(Polygon, vi): sommet_départ}
+        # Edge drag state: {(Polygon, vi): start_vertex}
         self.drag_start_edge_verts = {}
-        # État drag vertices : {(Polygon, vi): sommet_départ}
+        # Vertex drag state: {(Polygon, vi): start_vertex}
         self.drag_start_vertex_verts = {}
 
-        # Snapshot "avant drag" pour l'historique : {Polygon: list[vertex]}
+        # "Before drag" snapshot for history: {Polygon: list[vertex]}
         self.drag_before_snapshot: dict = {}
 
-    # ── Mode ──────────────────────────────────────────────────────────────────
-    def cycle_mode(self, multi_selected):
+    # ── Mode ──────────────────────────────────────────────────────────────────    def cycle_mode(self, multi_selected):
         if multi_selected:
             self.mode = 'rotate' if self.mode == 'translate' else 'translate'
         else:
@@ -110,7 +109,7 @@ class Gizmo:
         self.drag_before_snapshot    = {}
 
     def finish_drag(self, history, state) -> None:
-        """Finalise le drag et enregistre la transformation dans l'historique."""
+        """Finalizes the drag and records the transform in history."""
         if self.dragging_axis is not None and self.drag_before_snapshot:
             after   = {p: list(p.vertices) for p in self.drag_before_snapshot}
             changed = any(after[p] != self.drag_before_snapshot[p] for p in after)
@@ -121,7 +120,7 @@ class Gizmo:
                                                 after))
         self.stop_drag()
 
-    # ── Dessin ────────────────────────────────────────────────────────────────
+    # ── Drawing ───────────────────────────────────────────────────────────────
     def draw(self, state, camera):
         if state.selected_edges:
             self._draw_translate(self._edge_center(state), camera, self.dragging_axis)
@@ -187,7 +186,7 @@ class Gizmo:
             _draw_box_3d(pos, bs * (1.4 if name == active else 1.0), r, g, b)
         glLineWidth(1.0);  glEnable(GL_DEPTH_TEST)
 
-    # ── Picking ───────────────────────────────────────────────────────────────
+    # ── Picking ──────────────────────────────────────────────────────────────
     def pick_translate_axis(self, mx, my, state, camera):
         if state.selected_edges:
             center = self._edge_center(state)
@@ -240,7 +239,7 @@ class Gizmo:
                 if d < best_d: best_d, best = d, name
         return best
 
-    # ── Drag ──────────────────────────────────────────────────────────────────
+    # ── Drag ─────────────────────────────────────────────────────────────────
     def start_drag(self, axis_or_handle, mx, my, state, camera):
         if self.mode == 'translate':
             self._start_translate_drag(axis_or_handle, mx, my, state, camera)
@@ -257,7 +256,7 @@ class Gizmo:
         else:
             self._update_scale_drag(mx, my, state, camera)
 
-    # ── Drag translation ──────────────────────────────────────────────────────
+    # ── Translate drag ────────────────────────────────────────────────────────
     def _start_translate_drag(self, axis, mx, my, state, camera):
         self.dragging_axis = axis
         if state.selected_edges:
@@ -355,7 +354,7 @@ class Gizmo:
                 poly.vertices = [math3d.vadd(v, move) for v in start_verts]
             state.notify_polygon_transformed(list(self.drag_start_verts_all.keys()))
 
-    # ── Drag rotation ─────────────────────────────────────────────────────────
+    # ── Rotate drag ───────────────────────────────────────────────────────────
     def _start_rotate_drag(self, axis, mx, my, state, camera):
         self.dragging_axis        = axis
         polys = state.selected_polygons
@@ -387,7 +386,7 @@ class Gizmo:
                              for v in start_verts]
         state.notify_polygon_transformed(list(self.drag_start_verts_all.keys()))
 
-    # ── Drag scale ────────────────────────────────────────────────────────────
+    # ── Scale drag ────────────────────────────────────────────────────────────
     def _start_scale_drag(self, handle, mx, my, state, camera):
         self.dragging_axis = handle
         polys = state.selected_polygons
@@ -425,7 +424,7 @@ class Gizmo:
             self.drag_center, self.drag_wa, self.drag_ha, new_hw, new_hh)
         state.notify_polygon_transformed([self.drag_poly])
 
-    # ── Helpers internes ──────────────────────────────────────────────────────
+    # ── Internal helpers ──────────────────────────────────────────────────────
     def _vertex_center(self, state):
         verts = []
         for poly, vi in state.selected_vertices:

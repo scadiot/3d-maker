@@ -1,4 +1,4 @@
-"""Classe Camera : état et helpers de projection/rayon."""
+"""Camera class: state and projection/ray helpers."""
 
 import math
 
@@ -16,7 +16,7 @@ class Camera:
 
     # ── Directions ────────────────────────────────────────────────────────────
     def forward_xz(self):
-        """Direction avant tenant compte du pitch."""
+        """Forward direction taking pitch into account."""
         yr, pr = math.radians(self.yaw), math.radians(self.pitch)
         return (math.cos(pr)*math.sin(yr), math.sin(pr), math.cos(pr)*math.cos(yr))
 
@@ -26,7 +26,7 @@ class Camera:
 
     # ── Projection ────────────────────────────────────────────────────────────
     def world_to_screen(self, wx, wy, wz):
-        """Projette un point monde en coordonnées viewport. Retourne (px, py) ou None."""
+        """Projects a world point to viewport coordinates. Returns (px, py) or None."""
         tx, ty, tz = wx - self.pos[0], wy - self.pos[1], wz - self.pos[2]
         yr = math.radians(self.yaw);  cy, sy = math.cos(yr), math.sin(yr)
         cx2 = tx*cy - tz*sy;  cy2 = ty;  cz2 = tx*sy + tz*cy
@@ -37,7 +37,7 @@ class Camera:
         return ((cx3/(-cz3*aspect*t)+1)/2*self.vw, (1 - cy3/(-cz3*t))/2*self.vh)
 
     def screen_ray(self, vx, vy):
-        """Rayon depuis un pixel viewport. Retourne la direction normalisée."""
+        """Ray from a viewport pixel. Returns the normalized direction."""
         aspect = self.vw / self.vh;  t = math.tan(math.radians(FOV / 2))
         rcx = ((2*vx/self.vw) - 1) * aspect * t
         rcy = (1 - (2*vy/self.vh)) * t;  rcz = -1.0
@@ -47,9 +47,9 @@ class Camera:
         yr = math.radians(self.yaw);  cy, sy = math.cos(yr), math.sin(yr)
         return math3d.normalize((rx1*cy + rz1*sy, ry1, -rx1*sy + rz1*cy))
 
-    # ── Entrées ───────────────────────────────────────────────────────────────
+    # ── Input ─────────────────────────────────────────────────────────────────
     def apply_movement(self, keys, dt):
-        """keys : ensemble de keysyms Tkinter en minuscules (ex : {'z', 'd'})."""
+        """keys: set of lowercase Tkinter keysyms (e.g. {'z', 'd'})."""
         speed = MOVE_SPEED * dt
         fwd, rgt = self.forward_xz(), self.right_xz()
         if 'z' in keys: self.pos[0] -= fwd[0]*speed; self.pos[1] += fwd[1]*speed; self.pos[2] -= fwd[2]*speed
@@ -62,7 +62,7 @@ class Camera:
         self.pitch = max(-89.0, min(89.0, self.pitch - dy * MOUSE_SENSITIVITY))
 
     def apply_scroll(self, delta):
-        """Avance/recule la caméra selon le défilement de la molette."""
+        """Moves the camera forward/backward based on mouse wheel scroll."""
         fwd = self.forward_xz()
         speed = MOVE_SPEED * 0.1 * delta
         self.pos[0] -= fwd[0] * speed

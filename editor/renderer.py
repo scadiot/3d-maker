@@ -1,4 +1,4 @@
-"""Fonctions de rendu OpenGL stateless (grille)."""
+"""Stateless OpenGL rendering functions (grid)."""
 
 from OpenGL.GL import (
     glBegin, glEnd, glVertex3f, glColor3f, glLineWidth,
@@ -6,7 +6,7 @@ from OpenGL.GL import (
 )
 
 
-# ── Grille ────────────────────────────────────────────────────────────────────
+# ── Grid ──────────────────────────────────────────────────────────────────────
 def draw_grid(half_size=30, step=1):
     glLineWidth(1.0)
     glBegin(GL_LINES)

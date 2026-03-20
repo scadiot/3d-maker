@@ -1,4 +1,4 @@
-"""Composant UV Selector : affiche l'atlas de texture dans le panneau gauche."""
+"""UV Selector component: displays the texture atlas in the left panel."""
 
 import tkinter as tk
 from PIL import Image, ImageTk
@@ -7,18 +7,18 @@ from editor.constants import TEXTURE_PATH, PANEL_WIDTH
 
 _ZOOM_MIN = 1.0
 _ZOOM_MAX = 8.0
-_SRC_MAX  = 1024   # résolution max de l'image source conservée en mémoire
+_SRC_MAX  = 1024   # max resolution of the source image kept in memory
 
 
 class UVSelector(tk.Frame):
-    """Widget intégré dans le panneau gauche pour sélectionner une région UV dans l'atlas."""
+    """Widget embedded in the left panel to select a UV region from the atlas."""
 
     def __init__(self, master, scene, on_uv_assigned=None, **kw):
         super().__init__(master, bg='#1a1a21', **kw)
         self._scene            = scene
-        self._on_uv_assigned   = on_uv_assigned   # callback(polys_before) appelé après l'assignation
-        self._src_img     = None   # image PIL source (ratio préservé)
-        self._photo       = None   # PhotoImage courant (évite le GC)
+        self._on_uv_assigned   = on_uv_assigned   # callback(polys_before) called after assignment
+        self._src_img     = None   # source PIL image (aspect ratio preserved)
+        self._photo       = None   # current PhotoImage (prevents GC)
         self._zoom        = 1.0
         self._pan_x       = 0.0
         self._pan_y       = 0.0
@@ -26,7 +26,7 @@ class UVSelector(tk.Frame):
         self._drag_last_y = 0
         self._canvas_w    = PANEL_WIDTH
         self._canvas_h    = PANEL_WIDTH
-        # Taille de l'image au zoom=1 (ratio préservé, inscrite dans le canvas)
+        # Image size at zoom=1 (aspect ratio preserved, fitted to canvas)
         self._fit_w       = PANEL_WIDTH
         self._fit_h       = PANEL_WIDTH
 
@@ -53,7 +53,7 @@ class UVSelector(tk.Frame):
 
         self._load_texture()
 
-    # ── Chargement ────────────────────────────────────────────────────────────
+    # ── Loading ───────────────────────────────────────────────────────────────
     def _load_texture(self):
         try:
             img = Image.open(TEXTURE_PATH)
@@ -67,13 +67,13 @@ class UVSelector(tk.Frame):
         except Exception:
             self._canvas.create_text(
                 self._canvas_w // 2, self._canvas_h // 2,
-                text="Texture\nnon trouvée",
+                text="Texture\nnot found",
                 fill='#666680',
                 font=('Segoe UI', 9),
                 justify='center',
             )
 
-    # ── Calcul du fit (ratio préservé, centré dans le canvas) ─────────────────
+    # ── Fit computation (aspect ratio preserved, centered in canvas) ───────────
     def _compute_fit(self):
         if self._src_img is None:
             return
@@ -81,12 +81,12 @@ class UVSelector(tk.Frame):
         scale = min(self._canvas_w / src_w, self._canvas_h / src_h)
         self._fit_w = max(1, int(src_w * scale))
         self._fit_h = max(1, int(src_h * scale))
-        # Pan initial = image centrée dans le canvas
+        # Initial pan = image centered in canvas
         self._zoom  = 1.0
         self._pan_x = (self._canvas_w - self._fit_w) / 2
         self._pan_y = (self._canvas_h - self._fit_h) / 2
 
-    # ── Redimensionnement du canvas ───────────────────────────────────────────
+    # ── Canvas resize ─────────────────────────────────────────────────────────
     def _on_configure(self, event):
         if event.width == self._canvas_w and event.height == self._canvas_h:
             return
@@ -95,7 +95,7 @@ class UVSelector(tk.Frame):
         self._compute_fit()
         self._redraw()
 
-    # ── Rendu ─────────────────────────────────────────────────────────────────
+    # ── Rendering ─────────────────────────────────────────────────────────────
     def _redraw(self):
         if self._src_img is None:
             return
@@ -107,7 +107,7 @@ class UVSelector(tk.Frame):
         self._canvas.create_image(int(self._pan_x), int(self._pan_y),
                                    anchor='nw', image=self._photo)
 
-    # ── Zoom (molette) ────────────────────────────────────────────────────────
+    # ── Zoom (mouse wheel) ────────────────────────────────────────────────────
     def _on_wheel(self, event):
         factor   = 1.15 if event.delta > 0 else 1 / 1.15
         old_zoom = self._zoom
@@ -118,7 +118,7 @@ class UVSelector(tk.Frame):
         self._clamp_pan()
         self._redraw()
 
-    # ── Drag (molette maintenue) ──────────────────────────────────────────────
+    # ── Drag (middle button held) ─────────────────────────────────────────────
     def _on_middle_down(self, event):
         self._drag_last_x = event.x
         self._drag_last_y = event.y
@@ -128,7 +128,7 @@ class UVSelector(tk.Frame):
         self._canvas.config(cursor='crosshair')
 
     def _on_motion(self, event):
-        if not (event.state & 0x0200):   # bouton 2 non enfoncé → rien
+        if not (event.state & 0x0200):   # button 2 not held → do nothing
             return
         dx = event.x - self._drag_last_x
         dy = event.y - self._drag_last_y
@@ -139,15 +139,15 @@ class UVSelector(tk.Frame):
         self._clamp_pan()
         self._redraw()
 
-    # ── Clic gauche → assignation UV ─────────────────────────────────────────
+    # ── Left click → UV assignment ────────────────────────────────────────────
     def _on_click(self, event):
-        # Coordonnées dans l'espace image fit (zoom=1)
+        # Coordinates in fit image space (zoom=1)
         img_x = (event.x - self._pan_x) / self._zoom
         img_y = (event.y - self._pan_y) / self._zoom
-        # Reprojection vers les coordonnées pixel de l'atlas
+        # Reproject to atlas pixel coordinates
         atlas_x = int(img_x * self._scene.atlas_w / self._fit_w)
         atlas_y = int(img_y * self._scene.atlas_h / self._fit_h)
-        # Snapshot avant pour l'historique
+        # Before snapshot for history
         if self._on_uv_assigned:
             polys = self._scene._state.selected_polygons if self._scene._state else []
             before = {p: (list(p.vertices), list(p.uvs)) for p in polys}
@@ -157,9 +157,9 @@ class UVSelector(tk.Frame):
         else:
             self._scene.assign_uv_at_atlas_pixel(atlas_x, atlas_y)
 
-    # ── Utilitaire ────────────────────────────────────────────────────────────
+    # ── Utility ───────────────────────────────────────────────────────────────
     def _clamp_pan(self):
-        """Empêche l'image de sortir entièrement du canvas."""
+        """Prevents the image from going entirely out of the canvas."""
         sz_w = self._fit_w * self._zoom
         sz_h = self._fit_h * self._zoom
         self._pan_x = max(self._canvas_w * 0.25 - sz_w,

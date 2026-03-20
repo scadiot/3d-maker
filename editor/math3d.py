@@ -1,8 +1,8 @@
-"""Maths vectorielles 3D et intersections de rayons (fonctions pures)."""
+"""3D vector math and ray intersections (pure functions)."""
 
 import math
 
-# ── Vec3 ─────────────────────────────────────────────────────────────────────
+# ── Vec3 ──────────────────────────────────────────────────────────────────────
 def vadd(a, b):   return (a[0]+b[0], a[1]+b[1], a[2]+b[2])
 def vsub(a, b):   return (a[0]-b[0], a[1]-b[1], a[2]-b[2])
 def vscale(a, s): return (a[0]*s, a[1]*s, a[2]*s)
@@ -13,7 +13,7 @@ def normalize(a):
     l = vlength(a)
     return (a[0]/l, a[1]/l, a[2]/l) if l > 1e-10 else (0.0, 0.0, 0.0)
 
-# ── Intersection ──────────────────────────────────────────────────────────────
+# ── Intersections ─────────────────────────────────────────────────────────────
 def ray_triangle(orig, dir, v0, v1, v2):
     EPS = 1e-7
     e1, e2 = vsub(v1, v0), vsub(v2, v0)
@@ -29,7 +29,7 @@ def ray_poly_intersect(orig, dir, poly):
     v = [tuple(x) for x in poly]
     if len(v) < 3: return None
     normal = cross(vsub(v[1], v[0]), vsub(v[2], v[0]))
-    if dot(dir, normal) <= 0: return None  # face arrière ou perpendiculaire
+    if dot(dir, normal) <= 0: return None  # back face or perpendicular
     hits = [t for i in range(1, len(v) - 1)
             for t in [ray_triangle(orig, dir, v[0], v[i], v[i+1])] if t is not None]
     return min(hits) if hits else None
@@ -61,7 +61,7 @@ def seg_dist_2d(px, py, ax, ay, bx, by):
     t = max(0.0, min(1.0, ((px-ax)*dx + (py-ay)*dy) / len2))
     return math.hypot(px-(ax+t*dx), py-(ay+t*dy))
 
-# ── Géométrie ─────────────────────────────────────────────────────────────────
+# ── Geometry ──────────────────────────────────────────────────────────────────
 def angle_on_plane(point, center, u, v):
     local = vsub(point, center)
     return math.atan2(dot(local, v), dot(local, u))
@@ -76,7 +76,7 @@ def poly_center(poly):
     return (sum(v[0] for v in poly)/n, sum(v[1] for v in poly)/n, sum(v[2] for v in poly)/n)
 
 def quad_decompose(quad):
-    """Retourne (center, width_axis, height_axis, half_width, half_height)."""
+    """Returns (center, width_axis, height_axis, half_width, half_height)."""
     v0, v1, _, v3 = [tuple(v) for v in quad]
     center = poly_center(quad)
     wa = normalize(vsub(v1, v0));  ha = normalize(vsub(v3, v0))
@@ -92,7 +92,7 @@ def quad_compose(center, wa, ha, hw, hh):
     ]
 
 def diagonals_intersect(a, b, c, d):
-    """Retourne True si les diagonales a-c et b-d du quad se croisent (quad non-papillon)."""
+    """Returns True if the quad's diagonals a-c and b-d intersect (non-butterfly quad)."""
     d1 = vsub(c, a)
     d2 = vsub(d, b)
     r  = vsub(a, b)
@@ -105,7 +105,7 @@ def diagonals_intersect(a, b, c, d):
     ee = dot(d2, r)
     denom = aa * cc - bb * bb
     if abs(denom) < 1e-10:
-        return False  # diagonales parallèles → papillon
+        return False  # parallel diagonals → butterfly
     t = (bb * ee - cc * dd) / denom
     s = (aa * ee - bb * dd) / denom
     if not (0.0 < t < 1.0 and 0.0 < s < 1.0):

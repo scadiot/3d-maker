@@ -1,4 +1,4 @@
-"""Panneau hiérarchique des groupes avec drag & drop."""
+"""Hierarchical group panel with drag & drop."""
 
 import tkinter as tk
 from tkinter import ttk
@@ -7,7 +7,7 @@ from editor.group import Group, Polygon, all_polygons, is_visible
 
 
 class GroupPanel(tk.Frame):
-    """Affiche l'arbre Scène→Groupes→Polygones avec drag & drop entre nœuds."""
+    """Displays the Scene→Groups→Polygons tree with drag & drop between nodes."""
 
     _BG      = '#1a1a21'
     _BG_TREE = '#111118'
@@ -39,7 +39,7 @@ class GroupPanel(tk.Frame):
     # ── Construction ──────────────────────────────────────────────────────────
 
     def _build(self):
-        # Barre d'outils
+        # Toolbar
         toolbar = tk.Frame(self, bg=self._BTN_BG)
         toolbar.pack(side=tk.TOP, fill=tk.X)
 
@@ -74,7 +74,7 @@ class GroupPanel(tk.Frame):
 
         tk.Frame(self, height=1, bg='#2a2a3a').pack(side=tk.TOP, fill=tk.X)
 
-        # Treeview
+        # Tree view
         tree_frame = tk.Frame(self, bg=self._BG_TREE)
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -117,21 +117,21 @@ class GroupPanel(tk.Frame):
 
         self.refresh()
 
-    # ── Rafraîchissement ──────────────────────────────────────────────────────
+    # ── Refresh ───────────────────────────────────────────────────────────────
 
     def _toggle_hide_polygons(self):
-        """Bascule le mode masquage des polygones dans le treeview."""
+        """Toggles the hide-polygons mode in the treeview."""
         self._hide_polygons = not self._hide_polygons
         self._refresh_hide_poly_btn()
         self.refresh()
 
     def _refresh_hide_poly_btn(self):
-        """Met à jour la couleur du bouton selon l'état actif."""
+        """Updates the button color based on the active state."""
         color = '#2a2a6a' if self._hide_polygons else self._BTN_BG
         self._hide_poly_btn.config(bg=color)
 
     def refresh(self):
-        """Reconstruit l'arbre depuis scene.root."""
+        """Rebuilds the tree from scene.root."""
         self._iid_to_obj.clear()
         for iid in self._tree.get_children():
             self._tree.delete(iid)
@@ -145,30 +145,30 @@ class GroupPanel(tk.Frame):
         self.sync_selection(self._scene.selected_indices)
 
     def _on_scene_changed(self, change_type: str, **kw):
-        """Abonné à StateManager.scene_changed — reconstruit le treeview."""
+        """Subscribed to StateManager.scene_changed — rebuilds the treeview."""
         self.refresh()
 
     def _on_selection_changed(self, polygons, edges, vertices, mode):
-        """Abonné à StateManager.selection_changed — met à jour le treeview."""
+        """Subscribed to StateManager.selection_changed — updates the treeview."""
         flat    = all_polygons(self._scene.root)
         idx_map = {id(p): i for i, p in enumerate(flat)}
         indices = {idx_map[id(p)] for p in polygons if id(p) in idx_map}
         if self._hide_polygons:
-            # Reconstruire l'arbre : les polygones visibles ont peut-être changé
+            # Rebuild the tree: visible polygons may have changed
             self.refresh()
         else:
             self.sync_selection(indices)
 
     def _on_current_group_changed(self, group: Group):
-        """Abonné à StateManager.current_group_changed — met à jour la statusbar."""
+        """Subscribed to StateManager.current_group_changed — updates the status bar."""
         if hasattr(self._app, '_update_statusbar'):
             self._app._update_statusbar()
 
     def _insert_group(self, group: Group, parent_iid: str):
         if group.is_root:
-            text = '⬡ Scène'
+            text = '⬡ Scene'
         elif group.hidden:
-            text = f'▶ {group.name}  [caché]'
+            text = f'▶ {group.name}  [hidden]'
         else:
             text = f'▶ {group.name}'
         tags = ('hidden',) if group.hidden else ()
@@ -190,10 +190,10 @@ class GroupPanel(tk.Frame):
         iid = self._tree.insert(parent_iid, 'end', text=label)
         self._iid_to_obj[iid] = poly
 
-    # ── Boutons ───────────────────────────────────────────────────────────────
+    # ── Buttons ───────────────────────────────────────────────────────────────
 
     def _add_group(self):
-        """Crée un sous-groupe dans le groupe sélectionné (ou root)."""
+        """Creates a sub-group in the selected group (or root)."""
         sel = self._tree.selection()
         if sel:
             obj = self._iid_to_obj.get(sel[0])
@@ -204,17 +204,17 @@ class GroupPanel(tk.Frame):
         else:
             parent_group = self._scene.root
         if self._state is not None:
-            new_group = self._state.add_group('Groupe', parent_group)
+            new_group = self._state.add_group('Group', parent_group)
             history = getattr(self._app, 'history', None)
             if history is not None:
                 from editor.history import AddGroupCommand
                 history.record(AddGroupCommand(self._state, new_group, parent_group))
         else:
-            parent_group.add_group('Groupe')
+            parent_group.add_group('Group')
             self.refresh()
 
     def _delete_selected(self, *_):
-        """Supprime tous les groupes et polygones sélectionnés."""
+        """Deletes all selected groups and polygons."""
         sel = self._tree.selection()
         if not sel:
             return
@@ -224,8 +224,8 @@ class GroupPanel(tk.Frame):
         if not objs:
             return
 
-        # Dédoublonner : si un groupe est sélectionné avec ses enfants,
-        # supprimer le groupe suffit (les enfants disparaissent avec lui).
+        # Deduplicate: if a group is selected along with its children,
+        # deleting the group is enough (children disappear with it).
         def is_descendant(obj, ancestors):
             if isinstance(obj, Group):
                 node = obj.parent
@@ -284,14 +284,14 @@ class GroupPanel(tk.Frame):
             self._drag_iids = []
             return
 
-        # Si le clic est sur un item déjà sélectionné, on drage toute la sélection
+        # If clicking on an already-selected item, drag the whole selection
         sel = self._tree.selection()
         if iid in sel:
             candidates = list(sel)
         else:
             candidates = [iid]
 
-        # Filtrer : pas de racine, pas de doublons
+        # Filter: no root, no duplicates
         self._drag_iids = [
             i for i in candidates
             if not (isinstance(self._iid_to_obj.get(i), Group)
@@ -303,12 +303,12 @@ class GroupPanel(tk.Frame):
         if not self._drag_iids:
             return
         self._tree.config(cursor='exchange')
-        # Empêche le Treeview de modifier la sélection pendant le déplacement
+        # Prevent the Treeview from changing selection during drag
         self._syncing = True
         self._tree.selection_set(self._drag_iids)
         self._syncing = False
 
-        # Surbrillance verte du groupe cible survolé
+        # Green highlight on the hovered target group
         hovered_iid = self._tree.identify_row(event.y)
         new_hover_iid = None
         if hovered_iid and hovered_iid not in self._drag_iids:
@@ -348,7 +348,7 @@ class GroupPanel(tk.Frame):
         if target_obj is None:
             return
 
-        # Groupe cible : le groupe lui-même, ou le groupe du polygon cible
+        # Target group: the group itself, or the group of the target polygon
         target_group = (target_obj if isinstance(target_obj, Group)
                         else (target_obj.group or self._scene.root))
 
@@ -357,7 +357,7 @@ class GroupPanel(tk.Frame):
         move_cmds = []
         for drag_obj in drag_objs:
             if isinstance(drag_obj, Group):
-                # Anti-cycle : pas de déplacement dans soi-même ou ses descendants
+                # Anti-cycle: no moving into itself or its descendants
                 if drag_obj is target_group or self._is_ancestor(drag_obj, target_group):
                     continue
                 if drag_obj.parent is target_group:
@@ -395,7 +395,7 @@ class GroupPanel(tk.Frame):
             self.refresh()
 
     def sync_selection(self, indices: set):
-        """Met à jour la sélection du treeview depuis les indices de la scène."""
+        """Updates the treeview selection from scene indices."""
         if self._syncing:
             return
         flat           = all_polygons(self._scene.root)
@@ -415,7 +415,7 @@ class GroupPanel(tk.Frame):
         if not sel:
             return
 
-        # Si un groupe est sélectionné, il devient le current_group
+        # If a group is selected, it becomes the current_group
         first_obj = self._iid_to_obj.get(sel[0])
         if isinstance(first_obj, Group):
             if self._state is not None:
@@ -439,7 +439,7 @@ class GroupPanel(tk.Frame):
         self._scene.selected_indices = indices
         self._scene.selected_idx     = max(indices)
 
-    # ── Renommage inline ──────────────────────────────────────────────────────
+    # ── Inline rename ─────────────────────────────────────────────────────────
 
     def _on_double_click(self, event):
         iid = self._tree.identify_row(event.y)
@@ -497,7 +497,7 @@ class GroupPanel(tk.Frame):
         if not iid:
             return
 
-        # Si l'item cliqué n'est pas dans la sélection, le sélectionner seul
+        # If the clicked item is not in the selection, select it alone
         sel = list(self._tree.selection())
         if iid not in sel:
             self._tree.selection_set([iid])
@@ -514,19 +514,19 @@ class GroupPanel(tk.Frame):
         has_items = False
 
         if isinstance(clicked_obj, Group) and not clicked_obj.is_root:
-            menu.add_command(label='Sélectionner tous',
+            menu.add_command(label='Select all',
                              command=lambda: self._select_all_in_group(clicked_obj))
             menu.add_separator()
-            menu.add_command(label='Cacher',
+            menu.add_command(label='Hide',
                              command=lambda: self._set_group_hidden(clicked_obj, True))
-            menu.add_command(label='Afficher',
+            menu.add_command(label='Show',
                              command=lambda: self._set_group_hidden(clicked_obj, False))
             has_items = True
 
         if movable:
             if has_items:
                 menu.add_separator()
-            menu.add_command(label='Déplacer dans un groupe',
+            menu.add_command(label='Move to group',
                              command=lambda: self._show_move_to_group_dialog(movable))
             has_items = True
 
@@ -535,11 +535,11 @@ class GroupPanel(tk.Frame):
         menu.tk_popup(event.x_root, event.y_root)
 
     def _show_move_to_group_dialog(self, movable: list):
-        """Affiche la popup de sélection du groupe cible."""
+        """Displays the target group selection popup."""
         selected_groups = {o for o in movable if isinstance(o, Group)}
 
         def is_excluded(group: Group) -> bool:
-            """Exclut les groupes sélectionnés et leurs descendants."""
+            """Excludes selected groups and their descendants."""
             if group in selected_groups:
                 return True
             node = group.parent
@@ -568,12 +568,12 @@ class GroupPanel(tk.Frame):
                 depth += 1
                 node = node.parent
             prefix = '  ' * depth
-            return prefix + ('Scène' if group.is_root else group.name)
+            return prefix + ('Scene' if group.is_root else group.name)
 
         labels = [group_label(g) for g in valid_groups]
 
         popup = tk.Toplevel(self._tree)
-        popup.title('Déplacer dans un groupe')
+        popup.title('Move to group')
         popup.configure(bg='#1a1a21')
         popup.resizable(False, False)
         popup.transient(self._tree.winfo_toplevel())
@@ -585,7 +585,7 @@ class GroupPanel(tk.Frame):
         y = self._tree.winfo_rooty() + self._tree.winfo_height() // 2 - h // 2
         popup.geometry(f'{w}x{h}+{x}+{y}')
 
-        tk.Label(popup, text='Groupe cible :',
+        tk.Label(popup, text='Target group:',
                  bg='#1a1a21', fg=self._FG,
                  font=('Segoe UI', 9)).pack(padx=12, pady=(12, 4), anchor='w')
 
@@ -609,7 +609,7 @@ class GroupPanel(tk.Frame):
                   activebackground='#3d50a0', activeforeground=self._FG,
                   relief='flat', bd=0, font=('Segoe UI', 9), width=8,
                   cursor='hand2').pack(side=tk.LEFT, padx=4)
-        tk.Button(btn_frame, text='Annuler', command=popup.destroy,
+        tk.Button(btn_frame, text='Cancel', command=popup.destroy,
                   bg='#2a2a3a', fg=self._FG,
                   activebackground='#3a3a4a', activeforeground=self._FG,
                   relief='flat', bd=0, font=('Segoe UI', 9), width=8,
@@ -619,7 +619,7 @@ class GroupPanel(tk.Frame):
         popup.bind('<Escape>', lambda _: popup.destroy())
 
     def _do_move_to_group(self, movable: list, target_group: Group):
-        """Déplace les éléments sélectionnés vers target_group (avec undo/redo)."""
+        """Moves the selected items to target_group (with undo/redo)."""
         history    = getattr(self._app, 'history', None)
         move_cmds  = []
 
@@ -664,7 +664,7 @@ class GroupPanel(tk.Frame):
         self._scene.selected_indices = indices  # → StateManager → selection_changed → sync_selection()
 
     def _set_group_hidden(self, group: Group, hidden: bool):
-        """Cache ou affiche un groupe et rafraîchit l'affichage."""
+        """Hides or shows a group and refreshes the display."""
         group.hidden = hidden
         self.refresh()
         if self._state is not None:
