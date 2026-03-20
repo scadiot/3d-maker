@@ -176,6 +176,14 @@ class App:
                            command=self._cmd_create_from_edges)
         menubar.add_cascade(label="Polygon", menu=m_poly)
 
+        # ── Project ───────────────────────────────────────────────────────────
+        m_project = tk.Menu(menubar, tearoff=0)
+        m_project.add_command(label="Project info",
+                              command=self._cmd_project_info)
+        m_project.add_command(label="Textures Atlas",
+                              command=self._cmd_textures_atlas)
+        menubar.add_cascade(label="Project", menu=m_project)
+
         self.root.config(menu=menubar)
 
     # ── Toolbar ───────────────────────────────────────────────────────────────
@@ -949,6 +957,17 @@ class App:
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
+
+    def _cmd_project_info(self):
+        from editor.project_info_dialog import ProjectInfoDialog
+        dlg = ProjectInfoDialog(self.root, self.state)
+        if dlg._confirmed:
+            self._update_title()
+
+    def _cmd_textures_atlas(self):
+        messagebox.showinfo("Textures Atlas",
+                            f"Texture: {TEXTURE_PATH}\n"
+                            f"Atlas JSON: {ATLAS_JSON}")
 
     def _new_project(self):
         if self.state.modified:

@@ -365,8 +365,9 @@ class Scene:
                     for p in g.polygons
                 ],
             }
+        project_name = self._state.project_name if self._state is not None else ""
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"root": serialize_group(self.root)}, f, indent=2, ensure_ascii=False)
+            json.dump({"name": project_name, "root": serialize_group(self.root)}, f, indent=2, ensure_ascii=False)
 
     def load_json(self, path):
         """Imports a scene from a JSON file (appends to existing polygons)."""
