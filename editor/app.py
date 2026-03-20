@@ -129,12 +129,12 @@ class App:
         m_file.add_command(label="New project", accelerator="Ctrl+N",
                            command=self._new_project)
         m_file.add_separator()
+        m_file.add_command(label="Open",
+                           command=self._load_json_dialog)
         m_file.add_command(label="Save", accelerator="Ctrl+S",
                            command=self._save_json)
         m_file.add_command(label="Save as…",
                            command=self._save_json_dialog)
-        m_file.add_command(label="Load",
-                           command=self._load_json_dialog)
         m_file.add_separator()
         m_file.add_command(label="Quit",
                            command=self._on_close)
@@ -364,9 +364,9 @@ class App:
         # ── Layout ────────────────────────────────────────────────────────────
         add_btn(make_icon(ico_new),          self._new_project,       "New project (Ctrl+N)")
         add_sep()
+        add_btn(make_icon(ico_load),         self._load_json_dialog,  "Open")
         add_btn(make_icon(ico_save),         self._save_json_dialog,  "Save as…")
         add_btn(make_icon(ico_save_current), self._save_json,         "Save (Ctrl+S)")
-        add_btn(make_icon(ico_load),         self._load_json_dialog,  "Load")
         add_sep()
         add_btn(make_icon(ico_polygon),
                 self._cmd_add_polygon,
