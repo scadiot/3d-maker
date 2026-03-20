@@ -1,6 +1,8 @@
 """UV Selector component: displays the texture atlas in the left panel."""
 
+import os
 import tkinter as tk
+import tkinter.ttk as ttk
 from PIL import Image, ImageTk
 
 from editor.constants import TEXTURE_PATH, PANEL_WIDTH
@@ -38,6 +40,16 @@ class UVSelector(tk.Frame):
             font=('Segoe UI', 8, 'bold'),
         ).pack(pady=(6, 2))
 
+        self._atlas_var   = tk.StringVar(value="")
+        self._atlas_combo = ttk.Combobox(
+            self,
+            textvariable=self._atlas_var,
+            state='readonly',
+            font=('Segoe UI', 8),
+        )
+        self._atlas_combo.pack(fill=tk.X, padx=4, pady=(0, 4))
+        self._atlas_combo.bind('<<ComboboxSelected>>', self._on_atlas_selected)
+
         self._canvas = tk.Canvas(
             self,
             width=PANEL_WIDTH, height=PANEL_WIDTH,
@@ -60,6 +72,55 @@ class UVSelector(tk.Frame):
         if state is not None:
             state.subscribe("selection_changed",   lambda **_: self._redraw())
             state.subscribe("polygon_transformed", lambda **_: self._redraw())
+            state.subscribe("scene_changed",       lambda **_: self._refresh_atlas_list())
+        self._refresh_atlas_list()
+
+    # ── Atlas list ────────────────────────────────────────────────────────────
+    def _refresh_atlas_list(self):
+        state = getattr(self._scene, '_state', None)
+        if state is None:
+            return
+        atlases = state.textures_atlases
+        names = [os.path.basename(a.image_path) for a in atlases]
+        self._atlas_combo['values'] = names
+        if not names:
+            return
+        current = self._atlas_var.get()
+        if current not in names:
+            self._atlas_var.set(names[0])
+            self._load_texture_from_path(atlases[0].image_path)
+
+    def _on_atlas_selected(self, _event=None):
+        state = getattr(self._scene, '_state', None)
+        if state is None:
+            return
+        atlases = state.textures_atlases
+        names = [os.path.basename(a.image_path) for a in atlases]
+        selected = self._atlas_var.get()
+        if selected in names:
+            idx = names.index(selected)
+            self._load_texture_from_path(atlases[idx].image_path)
+
+    def _load_texture_from_path(self, path: str):
+        try:
+            img = Image.open(path)
+            scale = min(1.0, _SRC_MAX / max(img.width, img.height))
+            self._src_img = img.resize(
+                (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
+                Image.LANCZOS,
+            )
+            self._compute_fit()
+            self._redraw()
+        except Exception:
+            self._src_img = None
+            self._canvas.delete('all')
+            self._canvas.create_text(
+                self._canvas_w // 2, self._canvas_h // 2,
+                text="Texture\nnot found",
+                fill='#666680',
+                font=('Segoe UI', 9),
+                justify='center',
+            )
 
     # ── Loading ───────────────────────────────────────────────────────────────
     def _load_texture(self):
