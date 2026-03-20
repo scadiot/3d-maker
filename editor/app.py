@@ -325,6 +325,15 @@ class App:
                 d.line([i, 4, i, s-4], fill=c, width=1)
                 d.line([4, i, s-4, i], fill=c, width=1)
 
+        def ico_vertex_glue(d, s, c):
+            r, cx, cy = 2, s//2, s//2
+            # Two vertex dots
+            d.ellipse([2, cy-r, 2+2*r, cy+r], fill=c)
+            d.ellipse([s-2-2*r, cy-r, s-2, cy+r], fill=c)
+            # Chain link between them
+            d.rectangle([cx-4, cy-2, cx-1, cy+2], outline=c, width=1)
+            d.rectangle([cx+1, cy-2, cx+4, cy+2], outline=c, width=1)
+
         def ico_translate(d, s, c):
             cx, cy, a = s//2, s//2, 6
             for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
@@ -441,6 +450,8 @@ class App:
 
         self._btn_snap_grid = add_btn(make_icon(ico_snap_grid), self._toggle_snap_grid,
                                       "Grid snap")
+        self._btn_vertex_glue = add_btn(make_icon(ico_vertex_glue), self._toggle_vertex_glue,
+                                        "Vertex Glue", "V")
 
     # ── Second toolbar ────────────────────────────────────────────────────────
     def _build_toolbar2(self):
@@ -488,6 +499,10 @@ class App:
     def _toggle_snap_grid(self):
         self.gizmo.snap_to_grid = not self.gizmo.snap_to_grid
         self._btn_snap_grid.config(bg='#2d4080' if self.gizmo.snap_to_grid else '#16161f')
+
+    def _toggle_vertex_glue(self):
+        self.state.vertex_glue = not self.state.vertex_glue
+        self._btn_vertex_glue.config(bg='#2d4080' if self.state.vertex_glue else '#16161f')
 
     def _sync_toolbar2_btns(self):
         two_edges = len(self.state.selected_edges) == 2
@@ -765,6 +780,9 @@ class App:
 
         if key == 'n' and self.scene.selected_indices:
             self._cmd_flip_orientation()
+
+        if key == 'v':
+            self._toggle_vertex_glue()
 
         if key == 'escape':
             self.state.clear_selection()

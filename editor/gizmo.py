@@ -131,6 +131,9 @@ class Gizmo:
         # "Before drag" snapshot for history: {Polygon: list[vertex]}
         self.drag_before_snapshot: dict = {}
 
+        # Glued vertices: {(Polygon, vi): start_pos} for co-located verts not in primary drag
+        self.drag_start_glued_verts: dict = {}
+
         # Plane drag state
         self.drag_plane_hit0   = None   # initial ray/plane intersection point
         self.drag_plane_normal = None   # normal of the drag plane
@@ -150,6 +153,7 @@ class Gizmo:
         self.drag_start_vertex_verts = {}
         self.drag_poly               = None
         self.drag_before_snapshot    = {}
+        self.drag_start_glued_verts  = {}
         self.drag_plane_hit0         = None
         self.drag_plane_normal       = None
 
@@ -353,6 +357,29 @@ class Gizmo:
         else:
             return math3d.vscale(axis_dir, round(delta / snap) * snap)
 
+    # ── Vertex glue helper ────────────────────────────────────────────────────
+    @staticmethod
+    def _find_glued_extra(state, moving_positions, exclude_poly_vi, exclude_polys):
+        """Return {(poly, vi): pos} for all scene vertices co-located with any
+        position in *moving_positions*, excluding already-tracked pairs/polys."""
+        from editor.group import all_polygons as _all_polys
+        EPS = 1e-5
+        result = {}
+        for poly in _all_polys(state.root_group):
+            if poly in exclude_polys:
+                continue
+            for vi, v in enumerate(poly.vertices):
+                if (poly, vi) in exclude_poly_vi:
+                    continue
+                vt = (v[0], v[1], v[2])
+                for mp in moving_positions:
+                    if (abs(vt[0]-mp[0]) < EPS and
+                            abs(vt[1]-mp[1]) < EPS and
+                            abs(vt[2]-mp[2]) < EPS):
+                        result[(poly, vi)] = vt
+                        break
+        return result
+
     # ── Translate drag ────────────────────────────────────────────────────────
     def _start_translate_drag(self, axis, mx, my, state, camera):
         self.dragging_axis = axis
@@ -392,6 +419,25 @@ class Gizmo:
                       sum(c[2] for c in cs)/len(cs)) if cs else (0.0, 0.0, 0.0)
             self.drag_before_snapshot = {p: list(vs)
                                          for p, vs in self.drag_start_verts_all.items()}
+        # ── Vertex glue ───────────────────────────────────────────────────────
+        self.drag_start_glued_verts = {}
+        if state.vertex_glue:
+            if self.drag_start_vertex_verts:
+                moving = list(self.drag_start_vertex_verts.values())
+                excl_vi = set(self.drag_start_vertex_verts.keys())
+                glued = self._find_glued_extra(state, moving, excl_vi, set())
+            elif self.drag_start_edge_verts:
+                moving = list(self.drag_start_edge_verts.values())
+                excl_vi = set(self.drag_start_edge_verts.keys())
+                glued = self._find_glued_extra(state, moving, excl_vi, set())
+            else:
+                moving = [v for vs in self.drag_start_verts_all.values() for v in vs]
+                glued = self._find_glued_extra(
+                    state, moving, set(), set(self.drag_start_verts_all.keys()))
+            self.drag_start_glued_verts = glued
+            for poly in {p for p, _ in glued}:
+                if poly not in self.drag_before_snapshot:
+                    self.drag_before_snapshot[poly] = list(poly.vertices)
         if axis in GIZMO_PLANES:
             _, _, normal, _ = GIZMO_PLANES[axis]
             hit = math3d.ray_plane_intersect(tuple(camera.pos),
@@ -406,6 +452,7 @@ class Gizmo:
 
     def _update_translate_drag(self, mx, my, state, camera):
         if self.dragging_axis is None: return
+        move = None
         if self.drag_start_vertex_verts:
             verts  = list(self.drag_start_vertex_verts.values())
             n      = len(verts)
@@ -448,6 +495,18 @@ class Gizmo:
             for poly, start_verts in self.drag_start_verts_all.items():
                 poly.vertices = [math3d.vadd(v, move) for v in start_verts]
             state.notify_polygon_transformed(list(self.drag_start_verts_all.keys()))
+        # ── Apply glued vertices ──────────────────────────────────────────────
+        if move is not None and self.drag_start_glued_verts:
+            glue_updates = {}
+            for (poly, vi), start_v in self.drag_start_glued_verts.items():
+                glue_updates.setdefault(poly, {})[vi] = math3d.vadd(start_v, move)
+            for poly, vi_verts in glue_updates.items():
+                q = list(poly.vertices)
+                for vi, new_v in vi_verts.items():
+                    if vi < len(q):
+                        q[vi] = new_v
+                poly.vertices = q
+            state.notify_polygon_transformed(list(glue_updates.keys()))
 
     # ── Rotate drag ───────────────────────────────────────────────────────────
     def _start_rotate_drag(self, axis, mx, my, state, camera):
@@ -456,6 +515,15 @@ class Gizmo:
         self.drag_start_verts_all = {p: list(p.vertices) for p in polys}
         self.drag_before_snapshot = {p: list(vs)
                                      for p, vs in self.drag_start_verts_all.items()}
+        self.drag_start_glued_verts = {}
+        if state.vertex_glue:
+            moving = [v for vs in self.drag_start_verts_all.values() for v in vs]
+            glued  = self._find_glued_extra(
+                state, moving, set(), set(self.drag_start_verts_all.keys()))
+            self.drag_start_glued_verts = glued
+            for poly in {p for p, _ in glued}:
+                if poly not in self.drag_before_snapshot:
+                    self.drag_before_snapshot[poly] = list(poly.vertices)
         self.drag_center  = _polys_center(polys)
         axis_dir          = GIZMO_AXES[axis][0]
         self.drag_plane_u, self.drag_plane_v = math3d.perp_basis(axis_dir)
@@ -480,6 +548,17 @@ class Gizmo:
             poly.vertices = [math3d.rotate_point(v, self.drag_center, axis_dir, delta)
                              for v in start_verts]
         state.notify_polygon_transformed(list(self.drag_start_verts_all.keys()))
+        if self.drag_start_glued_verts:
+            glue_updates = {}
+            for (poly, vi), start_v in self.drag_start_glued_verts.items():
+                glue_updates.setdefault(poly, {})[vi] = math3d.rotate_point(
+                    start_v, self.drag_center, axis_dir, delta)
+            for poly, vi_verts in glue_updates.items():
+                q = list(poly.vertices)
+                for vi, new_v in vi_verts.items():
+                    q[vi] = new_v
+                poly.vertices = q
+            state.notify_polygon_transformed(list(glue_updates.keys()))
 
     # ── Scale drag ────────────────────────────────────────────────────────────
     def _start_scale_drag(self, handle, mx, my, state, camera):
@@ -489,6 +568,14 @@ class Gizmo:
         self.drag_poly        = polys[-1]
         self.drag_start_verts = list(self.drag_poly.vertices)
         self.drag_before_snapshot = {self.drag_poly: list(self.drag_start_verts)}
+        self.drag_start_glued_verts = {}
+        if state.vertex_glue:
+            glued = self._find_glued_extra(
+                state, self.drag_start_verts, set(), {self.drag_poly})
+            self.drag_start_glued_verts = glued
+            for poly in {p for p, _ in glued}:
+                if poly not in self.drag_before_snapshot:
+                    self.drag_before_snapshot[poly] = list(poly.vertices)
         (self.drag_center, self.drag_wa, self.drag_ha,
          self.drag_hw0, self.drag_hh0) = math3d.quad_decompose(self.drag_start_verts)
         ray_o = tuple(camera.pos);  ray_d = camera.screen_ray(mx, my)
@@ -518,6 +605,20 @@ class Gizmo:
         self.drag_poly.vertices = math3d.quad_compose(
             self.drag_center, self.drag_wa, self.drag_ha, new_hw, new_hh)
         state.notify_polygon_transformed([self.drag_poly])
+        if self.drag_start_glued_verts:
+            pos_map = {old: new for old, new in zip(self.drag_start_verts,
+                                                    self.drag_poly.vertices)}
+            glue_updates = {}
+            for (poly, vi), start_pos in self.drag_start_glued_verts.items():
+                new_pos = pos_map.get(start_pos)
+                if new_pos is not None:
+                    glue_updates.setdefault(poly, {})[vi] = new_pos
+            for poly, vi_verts in glue_updates.items():
+                q = list(poly.vertices)
+                for vi, new_v in vi_verts.items():
+                    q[vi] = new_v
+                poly.vertices = q
+            state.notify_polygon_transformed(list(glue_updates.keys()))
 
     # ── Internal helpers ──────────────────────────────────────────────────────
     def _vertex_center(self, state):

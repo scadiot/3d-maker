@@ -41,6 +41,7 @@ class StateManager:
         self._modified: bool = False  # True as soon as an unsaved change exists
         self._project_name: str = ""   # project name (without extension)
         self._project_path: str = ""   # absolute path to the project JSON file
+        self._vertex_glue: bool = False
 
     # ------------------------------------------------------------------ #
     # Accessors (read)                                                     #
@@ -69,6 +70,15 @@ class StateManager:
     @property
     def selected_vertices(self) -> list[tuple[Polygon, int]]:
         return list(self._selected_vertices)
+
+    @property
+    def vertex_glue(self) -> bool:
+        """When True, vertices at the same position as moved vertices move together."""
+        return self._vertex_glue
+
+    @vertex_glue.setter
+    def vertex_glue(self, value: bool) -> None:
+        self._vertex_glue = value
 
     @property
     def modified(self) -> bool:
