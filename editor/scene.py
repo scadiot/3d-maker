@@ -207,10 +207,10 @@ class Scene:
         self._select_new_polygon(new_poly)
         self._emit_scene_changed("polygon_added", polygon=new_poly, group=target)
 
-    def rotate_uvs(self):
-        """Cyclically shifts the UVs of selected polygons (v0→v1, v1→v2, …)."""
+    def rotate_vertices(self):
+        """Cyclically shifts the vertices and UVs of selected polygons (v0→v1, v1→v2, …)."""
         for poly in (self._state.selected_polygons if self._state else []):
-            poly.uvs = [poly.uvs[-1]] + list(poly.uvs[:-1])
+            poly.vertices = [poly.vertices[-1]] + list(poly.vertices[:-1])
 
     def flip_orientation(self):
         """Reverses the orientation (normal) of selected polygons."""

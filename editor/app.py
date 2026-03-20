@@ -169,8 +169,8 @@ class App:
         m_poly.add_separator()
         m_poly.add_command(label="Flip orientation", accelerator="N",
                            command=self._cmd_flip_orientation)
-        m_poly.add_command(label="Rotate UVs", accelerator="R",
-                           command=self._cmd_rotate_uvs)
+        m_poly.add_command(label="Rotate Vertices", accelerator="R",
+                           command=self._cmd_rotate_vertices)
         m_poly.add_separator()
         m_poly.add_command(label="Create polygon from edges",
                            command=self._cmd_create_from_edges)
@@ -472,8 +472,8 @@ class App:
         # ── Layout ────────────────────────────────────────────────────────────
         add_btn(self._cmd_flip_orientation,
                 "Flip orientation", "N")
-        add_btn(self._cmd_rotate_uvs,
-                "Rotate UVs", "R")
+        add_btn(self._cmd_rotate_vertices,
+                "Rotate Vertices", "R")
         self._sep_edges = tk.Frame(self.toolbar2, width=1, bg='#38384a')
         self._sep_edges.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
         self._btn_create_from_edges = add_btn(self._cmd_create_from_edges,
@@ -761,7 +761,7 @@ class App:
             self._cmd_ungroup()
 
         if key == 'r' and self.scene.selected_indices:
-            self._cmd_rotate_uvs()
+            self._cmd_rotate_vertices()
 
         if key == 'n' and self.scene.selected_indices:
             self._cmd_flip_orientation()
@@ -831,12 +831,12 @@ class App:
         if before and any(before[p] != after.get(p) for p in before):
             self.history.record(PolyDataCommand(self.state, before, after))
 
-    def _cmd_rotate_uvs(self) -> None:
+    def _cmd_rotate_vertices(self) -> None:
         polys = self.state.selected_polygons
         if not polys:
             return
         before = {p: (list(p.vertices), list(p.uvs)) for p in polys}
-        self.scene.rotate_uvs()
+        self.scene.rotate_vertices()
         after = {p: (list(p.vertices), list(p.uvs)) for p in polys}
         self.history.record(PolyDataCommand(self.state, before, after))
 
