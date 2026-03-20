@@ -292,6 +292,15 @@ class App:
             d.polygon([3, 7, 3, 4, 9, 4, 11, 7], outline=c, fill='#16161f')
             d.line([3, 7, 11, 7], fill=c, width=1)
 
+        def ico_import(d, s, c):
+            # Folder shape like ico_load, with a downward arrow inside
+            d.rectangle([3, 7, s-3, s-3], outline=c, width=1)
+            d.polygon([3, 7, 3, 4, 9, 4, 11, 7], outline=c, fill='#16161f')
+            d.line([3, 7, 11, 7], fill=c, width=1)
+            cx = s // 2
+            d.line([cx, 10, cx, s-7], fill=c, width=2)
+            d.polygon([cx-3, s-9, cx+3, s-9, cx, s-5], fill=c)
+
         def ico_polygon(d, s, c):
             r, cx, cy = s/2 - 3, s/2, s/2
             pts = [(cx + r*math.cos(2*math.pi*i/5 - math.pi/2),
@@ -391,6 +400,7 @@ class App:
         add_btn(make_icon(ico_new),          self._new_project,       "New project (Ctrl+N)")
         add_sep()
         add_btn(make_icon(ico_load),         self._load_json_dialog,  "Open")
+        add_btn(make_icon(ico_import),       self._import_json_dialog, "Import")
         add_btn(make_icon(ico_save),         self._save_json_dialog,  "Save as…")
         add_btn(make_icon(ico_save_current), self._save_json,         "Save (Ctrl+S)")
         add_sep()
@@ -1057,6 +1067,17 @@ class App:
             self.scene.load_json(path)
             self.gizmo.stop_drag()
             self.state.mark_saved()
+            self._update_title()
+
+    def _import_json_dialog(self):
+        path = filedialog.askopenfilename(
+            parent=self.root,
+            filetypes=[("JSON", "*.json")],
+            title="Import scene",
+        )
+        if path:
+            self.scene.import_json(path)
+            self.gizmo.stop_drag()
             self._update_title()
 
     def _pick_polygon(self, mx, my):

@@ -366,6 +366,10 @@ class Scene:
         """Exports the scene to a hierarchical JSON file."""
         serializer.save_json(self, path)
 
+    def import_json(self, path):
+        """Merges polygons from a JSON file into the current scene."""
+        serializer.import_json(self, path)
+
     def load_json(self, path):
         """Imports a scene from a JSON file (appends to existing polygons)."""
         serializer.load_json(self, path)
