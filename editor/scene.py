@@ -378,7 +378,7 @@ class Scene:
         atlases = []
         if self._state is not None:
             atlases = [
-                {"image_path": ta.image_path, "atlas_data": ta.atlas_data}
+                {"id": ta.id, "image_path": ta.image_path, "atlas_data": ta.atlas_data}
                 for ta in self._state.textures_atlases
             ]
         with open(path, "w", encoding="utf-8") as f:
@@ -440,10 +440,12 @@ class Scene:
         if self._state is not None:
             self._state.project_name = data.get("name", "Unnamed Project")  # already English
             self._state.project_path = path
-            self._state.textures_atlases = [
-                TextureAtlas(ta["image_path"], ta.get("atlas_data"))
-                for ta in data.get("textures_atlases", [])
-            ]
+            atlases = []
+            for ta in data.get("textures_atlases", []):
+                atlas = TextureAtlas(ta["image_path"], ta.get("atlas_data"))
+                atlas.id = ta.get("id", 0)
+                atlases.append(atlas)
+            self._state.textures_atlases = atlases
             if self._state.textures_atlases:
                 self.load_atlas(self._state.textures_atlases[0])
         self._emit_scene_changed("polygons_added")
