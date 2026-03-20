@@ -2,7 +2,6 @@
 
 import os
 import tkinter as tk
-import tkinter.ttk as ttk
 from PIL import Image, ImageTk
 
 from editor.constants import TEXTURE_PATH, PANEL_WIDTH
@@ -10,6 +9,129 @@ from editor.constants import TEXTURE_PATH, PANEL_WIDTH
 _ZOOM_MIN = 1.0
 _ZOOM_MAX = 8.0
 _SRC_MAX  = 1024   # max resolution of the source image kept in memory
+
+
+class _DarkDropdown(tk.Frame):
+    """Dark-themed dropdown widget matching the application's dark design."""
+
+    def __init__(self, master, textvariable, font=None, **kw):
+        super().__init__(master, bg='#252530', bd=0,
+                         highlightbackground='#3a3a4a', highlightthickness=1, **kw)
+        self._sel_callbacks = []
+        self._var    = textvariable
+        self._values = []
+        self._popup  = None
+        _font = font or ('Segoe UI', 8)
+
+        self._label = tk.Label(
+            self, textvariable=self._var,
+            bg='#252530', fg='#c8c8d8',
+            font=_font, anchor='w', padx=6,
+        )
+        self._label.pack(side='left', fill='both', expand=True)
+
+        self._arrow = tk.Label(
+            self, text='▾',
+            bg='#252530', fg='#666680',
+            font=_font, padx=6,
+        )
+        self._arrow.pack(side='right')
+
+        for w in (self, self._label, self._arrow):
+            w.bind('<Button-1>', self._toggle_popup)
+            w.bind('<Enter>',    lambda e: self._hover(True))
+            w.bind('<Leave>',    lambda e: self._hover(False))
+
+    def _hover(self, on):
+        c = '#2e2e3e' if on else '#252530'
+        self.configure(bg=c)
+        self._label.configure(bg=c)
+        self._arrow.configure(bg=c)
+
+    def __setitem__(self, key, value):
+        if key == 'values':
+            self._values = list(value)
+        else:
+            super().__setitem__(key, value)
+
+    def __getitem__(self, key):
+        if key == 'values':
+            return self._values
+        return super().__getitem__(key)
+
+    def bind(self, sequence=None, func=None, add=None):
+        if sequence == '<<ComboboxSelected>>':
+            self._sel_callbacks.append(func)
+        else:
+            super().bind(sequence, func, add)
+
+    def _toggle_popup(self, event=None):
+        if self._popup and self._popup.winfo_exists():
+            self._close_popup()
+        else:
+            self._open_popup()
+
+    def _open_popup(self):
+        if not self._values:
+            return
+        self._popup = tk.Toplevel(self)
+        self._popup.overrideredirect(True)
+        self._popup.configure(bg='#1a1a28',
+                              highlightbackground='#3a3a4a',
+                              highlightthickness=1)
+
+        lb = tk.Listbox(
+            self._popup,
+            bg='#1e1e2e', fg='#c8c8d8',
+            selectbackground='#3a3a6a', selectforeground='#ffffff',
+            activestyle='none',
+            highlightthickness=0, bd=0,
+            font=('Segoe UI', 8),
+            height=min(len(self._values), 8),
+            exportselection=False,
+        )
+        lb.pack(fill='both', expand=True, padx=1, pady=1)
+
+        for val in self._values:
+            lb.insert('end', val)
+
+        current = self._var.get()
+        if current in self._values:
+            idx = self._values.index(current)
+            lb.selection_set(idx)
+            lb.see(idx)
+
+        self._popup.update_idletasks()
+        x = self.winfo_rootx()
+        y = self.winfo_rooty() + self.winfo_height()
+        w = self.winfo_width()
+        h = lb.winfo_reqheight() + 4
+        self._popup.geometry(f'{w}x{h}+{x}+{y}')
+
+        lb.bind('<Motion>',          lambda e: self._lb_hover(e, lb))
+        lb.bind('<ButtonRelease-1>', lambda e: self._select(lb) or 'break')
+        self._popup.bind('<Button-1>', lambda e: self._close_popup())
+        self._popup.bind('<Escape>',   lambda e: self._close_popup())
+        self._popup.grab_set()
+        self._popup.focus_set()
+
+    def _lb_hover(self, event, lb):
+        lb.selection_clear(0, 'end')
+        lb.selection_set(lb.nearest(event.y))
+
+    def _select(self, lb):
+        sel = lb.curselection()
+        if sel:
+            self._var.set(self._values[sel[0]])
+            for cb in self._sel_callbacks:
+                cb(None)
+        self._close_popup()
+
+    def _close_popup(self):
+        if self._popup and self._popup.winfo_exists():
+            self._popup.grab_release()
+            self._popup.destroy()
+        self._popup = None
 
 
 class UVSelector(tk.Frame):
@@ -41,10 +163,9 @@ class UVSelector(tk.Frame):
         ).pack(pady=(6, 2))
 
         self._atlas_var   = tk.StringVar(value="")
-        self._atlas_combo = ttk.Combobox(
+        self._atlas_combo = _DarkDropdown(
             self,
             textvariable=self._atlas_var,
-            state='readonly',
             font=('Segoe UI', 8),
         )
         self._atlas_combo.pack(fill=tk.X, padx=4, pady=(0, 4))
