@@ -248,10 +248,11 @@ class Scene:
         polys = self._state.selected_polygons if self._state else []
         if not polys:
             return
-        new_polys = [
-            poly.group.add_polygon(copy.deepcopy(poly.vertices), list(poly.uvs))
-            for poly in polys
-        ]
+        new_polys = []
+        for poly in polys:
+            new_poly = poly.group.add_polygon(copy.deepcopy(poly.vertices), list(poly.uvs))
+            new_poly.texture_atlas_id = poly.texture_atlas_id
+            new_polys.append(new_poly)
         if self._state is not None:
             self._state.set_selection(polygons=new_polys)
         self._emit_scene_changed("polygon_added")
@@ -368,8 +369,9 @@ class Scene:
                 "groups":   [serialize_group(c) for c in g.children],
                 "polygons": [
                     {
-                        "vertices": [[round(v, 6) for v in vert] for vert in p.vertices],
-                        "uvs":      [[round(u, 6), round(v, 6)] for u, v in p.uvs],
+                        "vertices":         [[round(v, 6) for v in vert] for vert in p.vertices],
+                        "uvs":              [[round(u, 6), round(v, 6)] for u, v in p.uvs],
+                        "texture_atlas_id": p.texture_atlas_id,
                     }
                     for p in g.polygons
                 ],
@@ -395,10 +397,11 @@ class Scene:
         if "root" in data:
             def load_group(node_data, parent):
                 for p_data in node_data.get("polygons", []):
-                    parent.add_polygon(
+                    poly = parent.add_polygon(
                         [tuple(v) for v in p_data["vertices"]],
                         [tuple(uv) for uv in p_data["uvs"]],
                     )
+                    poly.texture_atlas_id = p_data.get("texture_atlas_id", 0)
                 for g_data in node_data.get("groups", []):
                     child = parent.add_group(g_data.get("name", "Group"))
                     load_group(g_data, child)

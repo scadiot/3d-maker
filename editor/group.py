@@ -17,9 +17,10 @@ class Polygon:
         uvs:      List[UV],
         group:    Optional['Group'] = None,
     ):
-        self.vertices: List[Vertex] = list(vertices)
-        self.uvs:      List[UV]     = list(uvs)
-        self.group:    Optional['Group'] = group
+        self.vertices:        List[Vertex]     = list(vertices)
+        self.uvs:             List[UV]         = list(uvs)
+        self.group:           Optional['Group'] = group
+        self.texture_atlas_id: int              = 0
 
     def __repr__(self) -> str:
         return f"Polygon({len(self.vertices)} vertices)"
