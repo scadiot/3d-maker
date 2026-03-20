@@ -752,6 +752,9 @@ class App:
         if key == 'n' and self.scene.selected_indices:
             self._cmd_flip_orientation()
 
+        if key == 'escape':
+            self.state.clear_selection()
+
         if key == 'e':
             modes = ['polygon', 'edge', 'vertex']
             next_mode = modes[(modes.index(self.state.selection_mode) + 1) % len(modes)]
