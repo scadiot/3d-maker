@@ -98,9 +98,29 @@ class UVSelector(tk.Frame):
     def _on_configure(self, event):
         if event.width == self._canvas_w and event.height == self._canvas_h:
             return
-        self._canvas_w = max(1, event.width)
-        self._canvas_h = max(1, event.height)
-        self._compute_fit()
+        if self._src_img is not None:
+            # Save the UV point currently at the canvas center
+            cx, cy = self._canvas_w / 2, self._canvas_h / 2
+            u_c = (cx - self._pan_x) / (self._fit_w * self._zoom)
+            v_c = 1.0 - (cy - self._pan_y) / (self._fit_h * self._zoom)
+
+            self._canvas_w = max(1, event.width)
+            self._canvas_h = max(1, event.height)
+
+            # Recompute fit dimensions without resetting zoom
+            src_w, src_h = self._src_img.size
+            scale = min(self._canvas_w / src_w, self._canvas_h / src_h)
+            self._fit_w = max(1, int(src_w * scale))
+            self._fit_h = max(1, int(src_h * scale))
+
+            # Restore pan so the same UV point stays at canvas center
+            self._pan_x = self._canvas_w / 2 - u_c * self._fit_w * self._zoom
+            self._pan_y = self._canvas_h / 2 - (1.0 - v_c) * self._fit_h * self._zoom
+            self._clamp_pan()
+        else:
+            self._canvas_w = max(1, event.width)
+            self._canvas_h = max(1, event.height)
+            self._compute_fit()
         self._redraw()
 
     # ── Rendering ─────────────────────────────────────────────────────────────
