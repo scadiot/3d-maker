@@ -968,9 +968,8 @@ class App:
             self._update_title()
 
     def _cmd_textures_atlas(self):
-        messagebox.showinfo("Textures Atlas",
-                            f"Texture: {TEXTURE_PATH}\n"
-                            f"Atlas JSON: {ATLAS_JSON}")
+        from editor.texture_atlas_dialog import TextureAtlasDialog
+        TextureAtlasDialog(self.root, self.state)
 
     def _new_project(self):
         if self.state.modified:
