@@ -82,6 +82,7 @@ class Scene:
         self._state = None   # injected by App after StateManager creation
 
         self.poly_texture  = 0
+        self.poly_textures: dict = {}   # atlas_id -> GL texture id
         self.atlas_w       = 1
         self.atlas_h       = 1
         self.atlas_data    = {}
@@ -151,11 +152,11 @@ class Scene:
 
     # ── Loading ───────────────────────────────────────────────────────────────
     def load_atlas(self, atlas: TextureAtlas) -> None:
-        """Loads a TextureAtlas: frees the old GPU texture, loads the new image and atlas data."""
-        if self.poly_texture:
-            glDeleteTextures(1, [self.poly_texture])
-            self.poly_texture = 0
+        """Loads a TextureAtlas into poly_textures dict by atlas id."""
+        if atlas.id in self.poly_textures:
+            glDeleteTextures(1, [self.poly_textures[atlas.id]])
         self.load_texture(atlas.image_path)
+        self.poly_textures[atlas.id] = self.poly_texture
         data = atlas.atlas_data
         if isinstance(data, str) and data:
             with open(data, encoding="utf-8") as f:
@@ -449,8 +450,8 @@ class Scene:
                 atlas.id = ta.get("id", 0)
                 atlases.append(atlas)
             self._state.textures_atlases = atlases
-            if self._state.textures_atlases:
-                self.load_atlas(self._state.textures_atlases[0])
+            for atlas in self._state.textures_atlases:
+                self.load_atlas(atlas)
         self._emit_scene_changed("polygons_added")
 
     # ── Edge operations ───────────────────────────────────────────────────────
@@ -568,7 +569,7 @@ class Scene:
             sel  = (id(poly_obj) in sel_poly_ids)
             if id(poly_obj) in needed_ids:
                 poly_verts_by_id[id(poly_obj)] = poly
-            glEnable(GL_TEXTURE_2D);  glBindTexture(GL_TEXTURE_2D, self.poly_texture)
+            glEnable(GL_TEXTURE_2D);  glBindTexture(GL_TEXTURE_2D, self.poly_textures.get(poly_obj.texture_atlas_id, self.poly_texture))
             glColor3f(1.0, 1.0, 1.0)
             glBegin(GL_TRIANGLE_FAN)
             for (vx, vy, vz), (u, v) in zip(poly, uvs):
