@@ -70,7 +70,7 @@ class UVSelector(tk.Frame):
 
         state = getattr(scene, '_state', None)
         if state is not None:
-            state.subscribe("selection_changed",   lambda **_: self._redraw())
+            state.subscribe("selection_changed",   lambda **_: self._sync_atlas_to_selection())
             state.subscribe("polygon_transformed", lambda **_: self._redraw())
             state.subscribe("scene_changed",       lambda **_: self._refresh_atlas_list())
         self._refresh_atlas_list()
@@ -97,9 +97,38 @@ class UVSelector(tk.Frame):
         atlases = state.textures_atlases
         names = [os.path.basename(a.image_path) for a in atlases]
         selected = self._atlas_var.get()
-        if selected in names:
-            idx = names.index(selected)
-            self._load_texture_from_path(atlases[idx].image_path)
+        if selected not in names:
+            return
+        idx = names.index(selected)
+        atlas = atlases[idx]
+        self._load_texture_from_path(atlas.image_path)
+        for poly in state.selected_polygons:
+            poly.texture_atlas_id = atlas.id
+        if state.selected_polygons:
+            state._modified = True
+
+    def _sync_atlas_to_selection(self):
+        """Switch the atlas dropdown to match the first selected polygon's atlas."""
+        state = getattr(self._scene, '_state', None)
+        if state is None:
+            self._redraw()
+            return
+        polys = state.selected_polygons
+        if not polys:
+            self._redraw()
+            return
+        atlas_id = polys[0].texture_atlas_id
+        atlases = state.textures_atlases
+        atlas = next((a for a in atlases if a.id == atlas_id), None)
+        if atlas is None:
+            self._redraw()
+            return
+        name = os.path.basename(atlas.image_path)
+        if self._atlas_var.get() != name:
+            self._atlas_var.set(name)
+            self._load_texture_from_path(atlas.image_path)
+        else:
+            self._redraw()
 
     def _load_texture_from_path(self, path: str):
         try:
