@@ -73,6 +73,7 @@ class UVSelector(tk.Frame):
             state.subscribe("selection_changed",   lambda **_: self._sync_atlas_to_selection())
             state.subscribe("polygon_transformed", lambda **_: self._redraw())
             state.subscribe("scene_changed",       lambda **_: self._refresh_atlas_list())
+            state.subscribe("textures_changed",    lambda atlases, **_: self._on_textures_changed(atlases))
         self._refresh_atlas_list()
 
     # ── Atlas list ────────────────────────────────────────────────────────────
@@ -89,6 +90,21 @@ class UVSelector(tk.Frame):
         if current not in names:
             self._atlas_var.set(names[0])
             self._load_texture_from_path(atlases[0].image_path)
+
+    def _on_textures_changed(self, atlases):
+        """Called when the atlas list is saved; refreshes the dropdown and reloads the current image."""
+        names = [os.path.basename(a.image_path) for a in atlases]
+        self._atlas_combo['values'] = names
+        if not names:
+            self._src_img = None
+            self._canvas.delete('all')
+            return
+        selected = self._atlas_var.get()
+        if selected not in names:
+            selected = names[0]
+            self._atlas_var.set(selected)
+        idx = names.index(selected)
+        self._load_texture_from_path(atlases[idx].image_path)
 
     def _on_atlas_selected(self, _event=None):
         state = getattr(self._scene, '_state', None)

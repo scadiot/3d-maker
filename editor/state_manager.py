@@ -15,6 +15,7 @@ EventName = Literal[
     "selection_changed",
     "current_group_changed",
     "polygon_transformed",
+    "textures_changed",
 ]
 
 
@@ -80,6 +81,12 @@ class StateManager:
     @textures_atlases.setter
     def textures_atlases(self, value: list[TextureAtlas]) -> None:
         self._textures_atlases = value
+
+    def change_textures(self, atlases: list[TextureAtlas]) -> None:
+        """Replaces the texture atlas list and notifies subscribers."""
+        self._textures_atlases = atlases
+        self._modified = True
+        self._emit("textures_changed", atlases=atlases)
 
     @property
     def vertex_glue(self) -> bool:

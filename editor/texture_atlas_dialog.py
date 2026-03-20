@@ -264,7 +264,7 @@ class TextureAtlasDialog(tk.Toplevel):
             self._atlas_data_var.set(path)
 
     def _cmd_save(self) -> None:
-        self._state.textures_atlases = self._working_atlases
+        self._state.change_textures(self._working_atlases)
         self.destroy()
 
     def _cmd_cancel(self) -> None:

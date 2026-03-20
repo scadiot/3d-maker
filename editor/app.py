@@ -108,6 +108,7 @@ class App:
         self.state.subscribe('selection_changed', lambda **_: self._sync_toolbar2_btns())
         self.state.subscribe('scene_changed', lambda **_: self._update_title())
         self.state.subscribe('polygon_transformed', lambda **_: self._update_title())
+        self.state.subscribe('textures_changed', lambda atlases, **_: [self.scene.load_atlas(a) for a in atlases])
 
         self.root.bind('<Control-z>', lambda _: self.history.undo())
         self.root.bind('<Control-y>', lambda _: self.history.redo())
