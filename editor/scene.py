@@ -12,7 +12,7 @@ from OpenGL.GL import (
     glBlendFunc,
     GL_TEXTURE_2D, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR,
     GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
-    GL_CULL_FACE, GL_BACK, GL_CW, GL_TRIANGLE_FAN, GL_LINE_LOOP, GL_LINES, GL_POINTS,
+    GL_CULL_FACE, GL_BACK, GL_CW, GL_TRIANGLE_FAN, GL_LINES, GL_POINTS,
     GL_BLEND, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
     GL_DEPTH_TEST,
 )
@@ -472,57 +472,89 @@ class Scene:
         sel_edges    = self._state.selected_edges if self._state else []
         sel_verts    = self._state.selected_vertices if self._state else []
 
-        # Polygons with selected edges/vertices (for post-loop rendering)
         edge_poly_ids = {id(p) for p, _ in sel_edges}
         vert_poly_ids = {id(p) for p, _ in sel_verts}
         needed_ids    = edge_poly_ids | vert_poly_ids
-        poly_verts_by_id = {}  # {id(poly_obj): vertices}
+        poly_verts_by_id = {}
 
-        selected_polys_verts = []  # vertices of selected polygons, deferred rendering
+        # Outline buckets for batched rendering (GL_LINES instead of N×GL_LINE_LOOP)
+        root_outline_verts  = []   # orange — root-level polygons
+        group_outline_verts = []   # blue   — grouped polygons
+        selected_polys_verts = []  # red    — selected polygons
+
+        # ── Face pass (sorted by texture to minimise glBindTexture calls) ───
+        visible = [p for p in iter_polygons(self.root) if is_visible(p)]
+        visible.sort(key=lambda p: p.texture_atlas_id or '')
 
         glEnable(GL_CULL_FACE);  glCullFace(GL_BACK);  glFrontFace(GL_CW)
-        for poly_obj in iter_polygons(self.root):
-            if not is_visible(poly_obj):
-                continue
+        glEnable(GL_TEXTURE_2D);  glColor3f(1.0, 1.0, 1.0)
+        current_tex = -1
+        for poly_obj in visible:
             poly = poly_obj.vertices
             uvs  = poly_obj.uvs
-            sel  = (id(poly_obj) in sel_poly_ids)
             if id(poly_obj) in needed_ids:
                 poly_verts_by_id[id(poly_obj)] = poly
-            glEnable(GL_TEXTURE_2D);  glBindTexture(GL_TEXTURE_2D, self.poly_textures.get(poly_obj.texture_atlas_id, self.poly_texture))
-            glColor3f(1.0, 1.0, 1.0)
+
+            # Bind texture only when it changes
+            tex_id = self.poly_textures.get(poly_obj.texture_atlas_id, self.poly_texture)
+            if tex_id != current_tex:
+                glBindTexture(GL_TEXTURE_2D, tex_id)
+                current_tex = tex_id
+
             glBegin(GL_TRIANGLE_FAN)
             for (vx, vy, vz), (u, v) in zip(poly, uvs):
                 glTexCoord2f(u, v);  glVertex3f(vx, vy, vz)
             glEnd()
-            glDisable(GL_TEXTURE_2D)
-            if sel:
+
+            # Collect outline vertices into buckets
+            if id(poly_obj) in sel_poly_ids:
                 selected_polys_verts.append(poly)
+            elif poly_obj.group is not self.root:
+                group_outline_verts.append(poly)
             else:
-                glLineWidth(1.5)
-                glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-                if poly_obj.group is not self.root:
-                    glColor4f(0.2, 0.7, 1.0, 0.5)
-                else:
-                    glColor4f(1.0, 0.75, 0.35, 0.5)
-                glBegin(GL_LINE_LOOP)
-                for vx, vy, vz in poly: glVertex3f(vx, vy, vz)
-                glEnd()
-                glDisable(GL_BLEND)
-        glLineWidth(1.0)
+                root_outline_verts.append(poly)
+
+        glDisable(GL_TEXTURE_2D)
         glDisable(GL_CULL_FACE)
 
-        # Red selection borders rendered without z-buffer (always visible)
+        # ── Outline pass — 2 batched GL_LINES calls instead of N×GL_LINE_LOOP ──
+        if root_outline_verts or group_outline_verts:
+            glLineWidth(1.5)
+            glEnable(GL_BLEND);  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+            if root_outline_verts:
+                glColor4f(1.0, 0.75, 0.35, 0.5)
+                glBegin(GL_LINES)
+                for poly in root_outline_verts:
+                    n = len(poly)
+                    for i in range(n):
+                        glVertex3f(*poly[i]);  glVertex3f(*poly[(i + 1) % n])
+                glEnd()
+            if group_outline_verts:
+                glColor4f(0.2, 0.7, 1.0, 0.5)
+                glBegin(GL_LINES)
+                for poly in group_outline_verts:
+                    n = len(poly)
+                    for i in range(n):
+                        glVertex3f(*poly[i]);  glVertex3f(*poly[(i + 1) % n])
+                glEnd()
+            glDisable(GL_BLEND)
+            glLineWidth(1.0)
+
+        # ── Selection outlines — 1 batched call, no depth test ───────────────
         if selected_polys_verts:
             glDisable(GL_DEPTH_TEST)
             glLineWidth(2.5)
             glColor4f(1.0, 0.15, 0.15, 1.0)
+            glBegin(GL_LINES)
             for poly in selected_polys_verts:
-                glBegin(GL_LINE_LOOP)
-                for vx, vy, vz in poly: glVertex3f(vx, vy, vz)
-                glEnd()
+                n = len(poly)
+                for i in range(n):
+                    glVertex3f(*poly[i]);  glVertex3f(*poly[(i + 1) % n])
+            glEnd()
             glLineWidth(1.0)
             glEnable(GL_DEPTH_TEST)
+
+        # ── Selected edges (already batched) ─────────────────────────────────
         if sel_edges:
             glDisable(GL_DEPTH_TEST)
             glLineWidth(4.0)
@@ -536,6 +568,8 @@ class Scene:
             glEnd()
             glLineWidth(1.0)
             glEnable(GL_DEPTH_TEST)
+
+        # ── Selected vertices (already batched) ───────────────────────────────
         if sel_verts:
             glDisable(GL_DEPTH_TEST)
             glPointSize(8.0)
