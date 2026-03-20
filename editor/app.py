@@ -20,7 +20,7 @@ from editor.constants import (PANEL_WIDTH, VIEW_WIDTH, HEIGHT,
                                FOV, NEAR, FAR, ATLAS_JSON, TEXTURE_PATH)
 
 _SEP_WIDTH           = 5
-_PANEL_MIN_WIDTH     = 100
+_PANEL_MIN_WIDTH     = 200
 _PANEL_MAX_WIDTH     = 700
 _TOTAL_CONTENT_WIDTH = PANEL_WIDTH + VIEW_WIDTH
 
@@ -62,12 +62,16 @@ class App:
         self.scene._state   = self.state           # injection du StateManager dans Scene
         self.gizmo          = Gizmo()
         self.panel_width    = PANEL_WIDTH
+        self.right_panel_width = PANEL_WIDTH
         self.panning        = False
         self.pan_last_x     = 0
         self.pan_last_y     = 0
         self._resizing      = False
         self._resize_start_x = 0
         self._resize_start_pw = PANEL_WIDTH
+        self._right_resizing      = False
+        self._right_resize_start_x = 0
+        self._right_resize_start_pw = PANEL_WIDTH
         self.history           = HistoryManager()
         self.keys_pressed      = set()
         self.mouse_btn1        = False
@@ -79,7 +83,7 @@ class App:
     # ── Cycle de vie ──────────────────────────────────────────────────────────
     def run(self):
         self.root = tk.Tk()
-        self.root.title("3D Viewer")
+        self.root.title("Quad Maker")
         self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -90,13 +94,19 @@ class App:
         self._build_statusbar()
         self._build_panel()
         self._build_resize_bar()
+        self._build_right_panel()
+        self._build_right_resize_bar()
         self._build_viewport()
         self._bind_events()
 
         self.state.subscribe('selection_changed', lambda **_: self._sync_toolbar2_btns())
+        self.state.subscribe('scene_changed', lambda **_: self._update_title())
+        self.state.subscribe('polygon_transformed', lambda **_: self._update_title())
 
         self.root.bind('<Control-z>', lambda _: self.history.undo())
         self.root.bind('<Control-y>', lambda _: self.history.redo())
+        self.root.bind('<Control-s>', lambda _: self._save_json())
+        self.root.bind('<Control-n>', lambda _: self._new_project())
 
         self.scene.load_atlas(ATLAS_JSON)
         self.viewport.animate = 1
@@ -104,8 +114,9 @@ class App:
         self.root.mainloop()
 
     def _on_close(self):
-        if not messagebox.askyesno("Quitter", "Voulez-vous vraiment quitter l'application ?"):
-            return
+        if self.state.modified:
+            if not messagebox.askyesno("Quitter", "Le projet n'est pas enregistré. Voulez-vous vraiment quitter ?"):
+                return
         self.scene.close_tex_preview()
         self.root.destroy()
 
@@ -115,9 +126,14 @@ class App:
 
         # ── File ──────────────────────────────────────────────────────────────
         m_file = tk.Menu(menubar, tearoff=0)
-        m_file.add_command(label="Enregistrer JSON…", accelerator="",
+        m_file.add_command(label="Nouveau projet", accelerator="Ctrl+N",
+                           command=self._new_project)
+        m_file.add_separator()
+        m_file.add_command(label="Enregistrer", accelerator="Ctrl+S",
+                           command=self._save_json)
+        m_file.add_command(label="Enregistrer sous…",
                            command=self._save_json_dialog)
-        m_file.add_command(label="Charger JSON…",
+        m_file.add_command(label="Charger",
                            command=self._load_json_dialog)
         m_file.add_separator()
         m_file.add_command(label="Quitter",
@@ -232,11 +248,32 @@ class App:
                 side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
         # ── Dessins des icônes ────────────────────────────────────────────────
+        def ico_new(d, s, c):
+            fold = 5
+            # Page avec coin plié en haut à droite
+            d.polygon([3, 3,  s-3-fold, 3,  s-3, 3+fold,  s-3, s-3,  3, s-3],
+                      outline=c, fill='#16161f')
+            d.line([s-3-fold, 3, s-3, 3+fold], fill=c, width=1)
+            # Croix «+» au centre
+            cx, cy = s//2, s//2 + 2
+            d.line([cx-3, cy, cx+3, cy], fill=c, width=2)
+            d.line([cx, cy-3, cx, cy+3], fill=c, width=2)
+
         def ico_save(d, s, c):
             d.rectangle([3, 4, s-3, s-3], outline=c, width=1)
             d.rectangle([5, 3, s-7, 8],   fill=c)               # étiquette
             d.rectangle([s-8, 3, s-5, 7], fill='#16161f')        # fenêtre étiquette
             d.rectangle([6, 13, s-6, s-4], outline=c, width=1)  # poche
+
+        def ico_save_current(d, s, c):
+            d.rectangle([3, 4, s-3, s-3], outline=c, width=1)
+            d.rectangle([5, 3, s-7, 8],   fill=c)
+            d.rectangle([s-8, 3, s-5, 7], fill='#16161f')
+            d.rectangle([6, 13, s-6, s-4], outline=c, width=1)
+            # petite flèche vers le bas au centre
+            cx = s // 2
+            d.line([cx, 14, cx, s-6], fill='#16161f', width=2)
+            d.polygon([cx-3, s-9, cx+3, s-9, cx, s-5], fill='#16161f')
 
         def ico_load(d, s, c):
             d.rectangle([3, 7, s-3, s-3], outline=c, width=1)
@@ -325,8 +362,11 @@ class App:
             d.ellipse([cx-r, cy-r, cx+r, cy+r], fill=c)
 
         # ── Placement ─────────────────────────────────────────────────────────
-        add_btn(make_icon(ico_save),      self._save_json_dialog,  "Enregistrer")
-        add_btn(make_icon(ico_load),      self._load_json_dialog,  "Charger")
+        add_btn(make_icon(ico_new),          self._new_project,       "Nouveau projet (Ctrl+N)")
+        add_sep()
+        add_btn(make_icon(ico_save),         self._save_json_dialog,  "Enregistrer sous…")
+        add_btn(make_icon(ico_save_current), self._save_json,         "Enregistrer (Ctrl+S)")
+        add_btn(make_icon(ico_load),         self._load_json_dialog,  "Charger")
         add_sep()
         add_btn(make_icon(ico_polygon),
                 self._cmd_add_polygon,
@@ -474,68 +514,9 @@ class App:
         self.panel.pack(side=tk.LEFT, fill=tk.Y)
         self.panel.pack_propagate(False)
 
-        self._tab_btns   = {}
-        self._tab_frames = {}
-        self._active_tab = None
-
-        # ── Barre d'onglets ───────────────────────────────────────────────────
-        _TAB_BG     = '#111118'
-        _TAB_BG_ON  = '#1a1a21'
-        _TAB_FG     = '#666678'
-        _TAB_FG_ON  = '#c8c8d8'
-        _TAB_ACT    = '#16161f'
-
-        tab_bar = tk.Frame(self.panel, bg=_TAB_BG)
-        tab_bar.pack(side=tk.TOP, fill=tk.X)
-
-        # Séparateur sous la barre
-        tk.Frame(self.panel, height=1, bg='#2a2a3a').pack(side=tk.TOP, fill=tk.X)
-
-        # Zone de contenu partagée
-        self._tab_content = tk.Frame(self.panel, bg='#1a1a21')
-        self._tab_content.pack(fill=tk.BOTH, expand=True)
-
-        def _switch_tab(name):
-            if self._active_tab == name:
-                return
-            if self._active_tab and self._active_tab in self._tab_frames:
-                self._tab_frames[self._active_tab].pack_forget()
-                self._tab_btns[self._active_tab].config(
-                    bg=_TAB_BG, fg=_TAB_FG, relief='flat')
-            self._active_tab = name
-            self._tab_frames[name].pack(fill=tk.BOTH, expand=True)
-            self._tab_btns[name].config(
-                bg=_TAB_BG_ON, fg=_TAB_FG_ON, relief='flat')
-
-        self._switch_tab = _switch_tab
-
-        def _add_tab(name, widget_factory):
-            btn = tk.Button(
-                tab_bar, text=name,
-                bg=_TAB_BG, fg=_TAB_FG,
-                activebackground=_TAB_ACT, activeforeground=_TAB_FG_ON,
-                relief='flat', bd=0,
-                font=('Segoe UI', 8),
-                padx=10, pady=5,
-                cursor='hand2',
-                command=lambda n=name: _switch_tab(n),
-            )
-            btn.pack(side=tk.LEFT)
-            frame = tk.Frame(self._tab_content, bg='#1a1a21')
-            self._tab_btns[name]   = btn
-            self._tab_frames[name] = frame
-            return widget_factory(frame)
-
-        self.uv_selector = _add_tab('UV Selector',
-                                    lambda f: UVSelector(f, self.scene,
-                                                         on_uv_assigned=self._cmd_uv_assigned))
+        self.uv_selector = UVSelector(self.panel, self.scene,
+                                      on_uv_assigned=self._cmd_uv_assigned)
         self.uv_selector.pack(fill=tk.BOTH, expand=True)
-
-        self.group_panel = _add_tab('Groupes',
-                                    lambda f: GroupPanel(f, self.scene, self))
-        self.group_panel.pack(fill=tk.BOTH, expand=True)
-
-        _switch_tab('UV Selector')
 
     def _build_statusbar(self):
         BG = '#111118'
@@ -593,6 +574,48 @@ class App:
         self._sep.bind('<Leave>', lambda _: self._sep.config(bg='#2a2a3a'
                                             if not self._resizing else '#3e3e5a'))
 
+    def _build_right_panel(self):
+        self.right_panel = tk.Frame(self.root, width=self.right_panel_width, bg='#1a1a21')
+        self.right_panel.pack(side=tk.RIGHT, fill=tk.Y)
+        self.right_panel.pack_propagate(False)
+
+        self.group_panel = GroupPanel(self.right_panel, self.scene, self)
+        self.group_panel.pack(fill=tk.BOTH, expand=True)
+
+    def _build_right_resize_bar(self):
+        self._right_sep = tk.Frame(self.root, width=_SEP_WIDTH, bg='#2a2a3a',
+                                   cursor='sb_h_double_arrow')
+        self._right_sep.pack(side=tk.RIGHT, fill=tk.Y)
+        self._right_sep.bind('<ButtonPress-1>',   self._on_right_sep_press)
+        self._right_sep.bind('<ButtonRelease-1>', self._on_right_sep_release)
+        self._right_sep.bind('<Motion>',          self._on_right_sep_motion)
+        self._right_sep.bind('<Enter>', lambda _: self._right_sep.config(bg='#3e3e5a'))
+        self._right_sep.bind('<Leave>', lambda _: self._right_sep.config(
+            bg='#2a2a3a' if not self._right_resizing else '#3e3e5a'))
+
+    def _on_right_sep_press(self, event):
+        self._right_resizing        = True
+        self._right_resize_start_x  = event.x_root
+        self._right_resize_start_pw = self.right_panel_width
+
+    def _on_right_sep_release(self, _):
+        self._right_resizing = False
+        self._right_sep.config(bg='#2a2a3a')
+
+    def _on_right_sep_motion(self, event):
+        if not self._right_resizing:
+            return
+        dx = self._right_resize_start_x - event.x_root
+        new_pw = max(_PANEL_MIN_WIDTH, min(_PANEL_MAX_WIDTH,
+                                           self._right_resize_start_pw + dx))
+        new_vw = self.root.winfo_width() - self.panel_width - _SEP_WIDTH * 2 - new_pw
+        if new_vw < 200:
+            return
+        self.right_panel_width = new_pw
+        self.right_panel.config(width=new_pw)
+        self.viewport.config(width=new_vw)
+        self.camera.vw = new_vw
+
     def _build_viewport(self):
         vw = _TOTAL_CONTENT_WIDTH - self.panel_width - _SEP_WIDTH
         self.viewport = Viewport3D(self.root, self, width=vw, height=HEIGHT)
@@ -615,7 +638,7 @@ class App:
         dx = event.x_root - self._resize_start_x
         new_pw = max(_PANEL_MIN_WIDTH, min(_PANEL_MAX_WIDTH,
                                            self._resize_start_pw + dx))
-        new_vw = self.root.winfo_width() - new_pw - _SEP_WIDTH
+        new_vw = self.root.winfo_width() - new_pw - _SEP_WIDTH * 2 - self.right_panel_width
         if new_vw < 200:
             return
         self.panel_width = new_pw
@@ -902,6 +925,46 @@ class App:
             else:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
 
+    def _new_project(self):
+        if self.state.modified:
+            if not messagebox.askyesno(
+                "Nouveau projet",
+                "Le projet en cours n'est pas enregistré.\n"
+                "Voulez-vous continuer et perdre les modifications ?",
+                icon='warning',
+            ):
+                return
+        # Réinitialise la scène
+        self.scene.root.children.clear()
+        self.scene.root.polygons.clear()
+        self.scene.root.hidden = False
+        # Réinitialise l'état
+        self.state._current_group = self.scene.root
+        self.state._selected_polygons = []
+        self.state._selected_edges = []
+        self.state._selected_vertices = []
+        self.state._project_path = ""
+        self.state._project_name = ""
+        self.state._modified = False
+        # Réinitialise l'historique et le gizmo
+        self.history.clear()
+        self.gizmo.stop_drag()
+        # Notifie les composants
+        self.state._emit("scene_changed", change_type="new_project")
+        self.state._emit("selection_changed",
+                         polygons=[], edges=[], vertices=[],
+                         mode=self.state.selection_mode)
+        self._update_title()
+
+    def _save_json(self):
+        path = self.state.project_path
+        if not path:
+            self._save_json_dialog()
+            return
+        self.scene.save_json(path)
+        self.state.mark_saved()
+        self._update_title()
+
     def _save_json_dialog(self):
         path = filedialog.asksaveasfilename(
             parent=self.root,
@@ -910,17 +973,39 @@ class App:
             title="Enregistrer la scène",
         )
         if path:
+            self.state.project_path = path
             self.scene.save_json(path)
+            self.state.mark_saved()
+            self._update_title()
 
     def _load_json_dialog(self):
+        if self.state.modified:
+            if not messagebox.askyesno(
+                "Projet non enregistré",
+                "Le projet en cours n'est pas enregistré.\n"
+                "Voulez-vous quand même charger un autre projet et perdre vos modifications ?",
+                parent=self.root,
+            ):
+                return
+
         path = filedialog.askopenfilename(
             parent=self.root,
             filetypes=[("JSON", "*.json")],
             title="Charger une scène",
         )
         if path:
+            # Vider la scène avant le chargement
+            self.scene.root.children.clear()
+            self.scene.root.polygons.clear()
+            self.state.clear_selection()
+            self.state._current_group = self.scene.root
+            self.history.clear()
+
+            self.state.project_path = path
             self.scene.load_json(path)
             self.gizmo.stop_drag()
+            self.state.mark_saved()
+            self._update_title()
 
     def _pick_polygon(self, mx, my):
         return self.scene.pick_polygon(tuple(self.camera.pos), self.camera.screen_ray(mx, my))
@@ -990,6 +1075,13 @@ class App:
                 self.state.clear_selection()
 
     # ── Mise à jour ───────────────────────────────────────────────────────────
+    def _update_title(self):
+        name = self.state.project_name or "Unnamed Project"
+        title = f"Quad Maker - {name}"
+        if self.state.modified:
+            title += " - [non sauvegardé]"
+        self.root.title(title)
+
     def _update_loop(self):
         now = time.time()
         dt  = now - self.last_time
@@ -1001,7 +1093,7 @@ class App:
         self.camera.apply_movement(self.keys_pressed, dt)
         self._update_statusbar()
 
-        self.root.after(16, self._update_loop)
+        self.root.after(32, self._update_loop)
 
     # ── Rendu ─────────────────────────────────────────────────────────────────
     def _render(self):

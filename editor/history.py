@@ -38,6 +38,11 @@ class HistoryManager:
         self._redo: list[Command] = []
         self._max = max_size
 
+    def clear(self) -> None:
+        """Vide l'historique undo/redo."""
+        self._undo.clear()
+        self._redo.clear()
+
     def push(self, cmd: Command) -> None:
         """Exécute cmd et l'enregistre dans l'historique."""
         cmd.execute()

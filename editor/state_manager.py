@@ -31,13 +31,16 @@ class StateManager:
 
     def __init__(self, root_group: Group) -> None:
         self._root_group: Group = root_group
-        self._current_group: Group = root_group
+        self._current_group: Group = root_group 
         self._selection_mode: SelectionMode = "polygon"
         self._selected_polygons: list[Polygon] = []
         self._selected_edges: list[tuple[Polygon, int]] = []
         self._selected_vertices: list[tuple[Polygon, int]] = []
         self._listeners: dict[str, list[Callable]] = defaultdict(list)
         self._emitting: bool = False  # garde contre les boucles de notification
+        self._modified: bool = False  # True dès qu'une modification non sauvegardée existe
+        self._project_name: str = ""   # nom du projet (sans extension)
+        self._project_path: str = ""   # chemin absolu vers le fichier JSON du projet
 
     # ------------------------------------------------------------------ #
     # Accesseurs (lecture)                                                 #
@@ -67,6 +70,33 @@ class StateManager:
     def selected_vertices(self) -> list[tuple[Polygon, int]]:
         return list(self._selected_vertices)
 
+    @property
+    def modified(self) -> bool:
+        """True si la scène a été modifiée depuis le dernier enregistrement."""
+        return self._modified
+
+    def mark_saved(self) -> None:
+        """Marque la scène comme sauvegardée (réinitialise le flag de modification)."""
+        self._modified = False
+
+    @property
+    def project_name(self) -> str:
+        """Nom du projet (sans extension)."""
+        return self._project_name
+
+    @project_name.setter
+    def project_name(self, value: str) -> None:
+        self._project_name = value
+
+    @property
+    def project_path(self) -> str:
+        """Chemin absolu vers le fichier JSON du projet."""
+        return self._project_path
+
+    @project_path.setter
+    def project_path(self, value: str) -> None:
+        self._project_path = value
+
     # ------------------------------------------------------------------ #
     # Mutateurs scène                                                      #
     # ------------------------------------------------------------------ #
@@ -75,6 +105,7 @@ class StateManager:
         """Ajoute un polygone au groupe donné (ou current_group par défaut)."""
         target = group if group is not None else self._current_group
         target.adopt_polygon(polygon)
+        self._modified = True
         self._emit("scene_changed", change_type="polygon_added", polygon=polygon, group=target)
 
     def delete_polygons(self, polygons: list[Polygon]) -> None:
@@ -87,6 +118,7 @@ class StateManager:
         self._selected_polygons = [p for p in self._selected_polygons if p not in to_delete]
         self._selected_edges = [(p, i) for p, i in self._selected_edges if p not in to_delete]
         self._selected_vertices = [(p, i) for p, i in self._selected_vertices if p not in to_delete]
+        self._modified = True
         self._emit("scene_changed", change_type="polygons_deleted", polygons=list(polygons))
         self._emit("selection_changed",
                    polygons=self.selected_polygons,
@@ -97,12 +129,14 @@ class StateManager:
     def move_polygon(self, polygon: Polygon, new_group: Group) -> None:
         """Déplace un polygone vers un autre groupe."""
         new_group.adopt_polygon(polygon)
+        self._modified = True
         self._emit("scene_changed", change_type="polygon_moved", polygon=polygon, new_group=new_group)
 
     def add_group(self, name: str, parent: Group | None = None) -> Group:
         """Crée un nouveau groupe enfant."""
         target_parent = parent if parent is not None else self._current_group
         new_group = target_parent.add_group(name)
+        self._modified = True
         self._emit("scene_changed", change_type="group_added", group=new_group, parent=target_parent)
         return new_group
 
@@ -119,6 +153,7 @@ class StateManager:
             self._selected_polygons = [p for p in self._selected_polygons if p not in deleted_polys]
             self._selected_edges = [(p, i) for p, i in self._selected_edges if p not in deleted_polys]
             self._selected_vertices = [(p, i) for p, i in self._selected_vertices if p not in deleted_polys]
+        self._modified = True
         self._emit("scene_changed", change_type="group_deleted", group=group)
         if deleted_polys:
             self._emit("selection_changed",
@@ -131,15 +166,18 @@ class StateManager:
         """Renomme un groupe."""
         old_name = group.name
         group.name = name
+        self._modified = True
         self._emit("scene_changed", change_type="group_renamed", group=group, old_name=old_name)
 
     def move_group(self, group: Group, new_parent: Group) -> None:
         """Déplace un groupe dans la hiérarchie."""
         new_parent.adopt_group(group)
+        self._modified = True
         self._emit("scene_changed", change_type="group_moved", group=group, new_parent=new_parent)
 
     def notify_polygon_transformed(self, polygons: list[Polygon]) -> None:
         """À appeler par le Gizmo après chaque frame de drag."""
+        self._modified = True
         self._emit("polygon_transformed", polygons=polygons)
 
     # ------------------------------------------------------------------ #

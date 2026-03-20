@@ -170,6 +170,7 @@ class Scene:
     def _emit_scene_changed(self, change_type: str, **kw) -> None:
         """Notifie le StateManager d'un changement structurel de la scène."""
         if self._state is not None:
+            self._state._modified = True
             self._state._emit("scene_changed", change_type=change_type, **kw)
 
     def _select_new_polygon(self, new_poly):
@@ -421,6 +422,9 @@ class Scene:
         new_polys  = flat_after[n_before:]
         if new_polys and self._state is not None:
             self._state.set_selection(polygons=new_polys)
+        if self._state is not None:
+            self._state.project_name = data.get("name", "Unnamed Project")
+            self._state.project_path = path
         self._emit_scene_changed("polygons_added")
 
     # ── Opérations sur arêtes ─────────────────────────────────────────────────
