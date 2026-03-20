@@ -28,6 +28,7 @@ SNAP_VALUES = ["1", "0.5", "0.25", "0.1", "0.05", "0.01"]
 from editor.camera        import Camera
 from editor.scene         import Scene
 from editor.gizmo         import Gizmo
+from editor.view_cube     import ViewCube
 from editor.renderer      import draw_grid
 from editor.uv_selector   import UVSelector
 from editor.group_panel   import GroupPanel
@@ -61,6 +62,7 @@ class App:
         self.state          = StateManager(self.scene.root)
         self.scene._state   = self.state           # inject StateManager into Scene
         self.gizmo          = Gizmo()
+        self.view_cube      = ViewCube()
         self.panel_width    = PANEL_WIDTH
         self.right_panel_width = PANEL_WIDTH
         self.panning        = False
@@ -662,6 +664,10 @@ class App:
         self.viewport.focus_set()
         self.mouse_btn1 = True
         self.mouse_x, self.mouse_y = event.x, event.y
+        face = self.view_cube.hit_test(event.x, event.y, self.camera.vw, self.camera.vh, self.camera)
+        if face:
+            self.view_cube.snap_to_face(face, self.camera)
+            return
         self._handle_mouse_down_3d(event.x, event.y)
 
     def _on_mouse_up(self, event):
@@ -1094,6 +1100,7 @@ class App:
             self.gizmo.update_drag(self.mouse_x, self.mouse_y, self.state, self.camera)
 
         self.camera.apply_movement(self.keys_pressed, dt)
+        self.view_cube.update(self.camera, dt)
         self._update_statusbar()
 
         self.root.after(32, self._update_loop)
@@ -1115,3 +1122,4 @@ class App:
         draw_grid(30, 1)
         self.scene.draw()
         self.gizmo.draw(self.state, self.camera)
+        self.view_cube.draw(self.camera, vw, vh)
