@@ -93,7 +93,8 @@ class Gizmo:
         # "Before drag" snapshot for history: {Polygon: list[vertex]}
         self.drag_before_snapshot: dict = {}
 
-    # ── Mode ──────────────────────────────────────────────────────────────────    def cycle_mode(self, multi_selected):
+    # ── Mode ──────────────────────────────────────────────────────────────────
+    def cycle_mode(self, multi_selected):
         if multi_selected:
             self.mode = 'rotate' if self.mode == 'translate' else 'translate'
         else:
