@@ -11,7 +11,7 @@ from OpenGL.GL import (
     GL_LINES, GL_TRIANGLE_FAN, GL_QUADS, GL_LINE_LOOP, GL_DEPTH_TEST,
 )
 
-from editor.constants import GIZMO_MODES, GIZMO_AXES, SCALE_COLORS
+from editor.constants import GIZMO_MODES, GIZMO_AXES, GIZMO_PLANES, SCALE_COLORS
 from editor import math3d
 
 
@@ -50,6 +50,43 @@ def _draw_box_3d(pos, size, r, g, b):
     ]:
         for vv in face: glVertex3f(*vv)
     glEnd()
+
+
+def _draw_plane_squares(center, scale, active=None):
+    """Draw the three XY/XZ/YZ plane-handle squares at the base of the arrows."""
+    offset = scale * 0.18
+    half   = scale * 0.07
+    for name, (a1, a2, _normal, color) in GIZMO_PLANES.items():
+        r, g, b = (1.0, 0.9, 0.1) if name == active else color
+        sq_c = math3d.vadd(center, math3d.vadd(math3d.vscale(a1, offset),
+                                               math3d.vscale(a2, offset)))
+        corners = [
+            math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1, -half), math3d.vscale(a2, -half))),
+            math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1,  half), math3d.vscale(a2, -half))),
+            math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1,  half), math3d.vscale(a2,  half))),
+            math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1, -half), math3d.vscale(a2,  half))),
+        ]
+        # filled face (dimmed)
+        glColor3f(r * 0.45, g * 0.45, b * 0.45)
+        glBegin(GL_QUADS)
+        for c in corners: glVertex3f(*c)
+        glEnd()
+        # outline
+        glColor3f(r, g, b)
+        glLineWidth(1.5)
+        glBegin(GL_LINE_LOOP)
+        for c in corners: glVertex3f(*c)
+        glEnd()
+        glLineWidth(1.0)
+
+
+def _point_in_quad_2d(px, py, pts):
+    """Return True if (px, py) is inside the convex quad defined by 4 screen points."""
+    crosses = []
+    for i in range(4):
+        x1, y1 = pts[i]; x2, y2 = pts[(i + 1) % 4]
+        crosses.append((x2 - x1) * (py - y1) - (y2 - y1) * (px - x1))
+    return all(c >= 0 for c in crosses) or all(c <= 0 for c in crosses)
 
 
 def _polys_center(polys):
@@ -94,6 +131,10 @@ class Gizmo:
         # "Before drag" snapshot for history: {Polygon: list[vertex]}
         self.drag_before_snapshot: dict = {}
 
+        # Plane drag state
+        self.drag_plane_hit0   = None   # initial ray/plane intersection point
+        self.drag_plane_normal = None   # normal of the drag plane
+
     # ── Mode ──────────────────────────────────────────────────────────────────
     def cycle_mode(self, multi_selected):
         if multi_selected:
@@ -109,6 +150,8 @@ class Gizmo:
         self.drag_start_vertex_verts = {}
         self.drag_poly               = None
         self.drag_before_snapshot    = {}
+        self.drag_plane_hit0         = None
+        self.drag_plane_normal       = None
 
     def finish_drag(self, history, state) -> None:
         """Finalizes the drag and records the transform in history."""
@@ -152,6 +195,7 @@ class Gizmo:
     def _draw_translate(self, center, camera, active=None):
         scale = self._gizmo_scale(center, camera)
         glDisable(GL_DEPTH_TEST)
+        _draw_plane_squares(center, scale, active)
         for name, (axis_dir, color) in GIZMO_AXES.items():
             _draw_arrow_3d(center, math3d.vadd(center, math3d.vscale(axis_dir, scale)),
                            color, name == active)
@@ -199,6 +243,23 @@ class Gizmo:
         else:
             return None
         scale  = self._gizmo_scale(center, camera)
+        # Plane squares take priority over axis arrows
+        offset = scale * 0.18
+        half   = scale * 0.07
+        for name, (a1, a2, _normal, _color) in GIZMO_PLANES.items():
+            sq_c = math3d.vadd(center, math3d.vadd(math3d.vscale(a1, offset),
+                                                   math3d.vscale(a2, offset)))
+            corners_3d = [
+                math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1, -half), math3d.vscale(a2, -half))),
+                math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1,  half), math3d.vscale(a2, -half))),
+                math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1,  half), math3d.vscale(a2,  half))),
+                math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1, -half), math3d.vscale(a2,  half))),
+            ]
+            corners_2d = [camera.world_to_screen(*c) for c in corners_3d]
+            if all(c is not None for c in corners_2d):
+                if _point_in_quad_2d(mx, my, corners_2d):
+                    return name
+        # Axis arrows
         best, best_d = None, 10.0
         for name, (axis_dir, _) in GIZMO_AXES.items():
             p0 = camera.world_to_screen(*center)
@@ -258,6 +319,30 @@ class Gizmo:
         else:
             self._update_scale_drag(mx, my, state, camera)
 
+    # ── Move computation (axis or plane) ──────────────────────────────────────
+    def _get_move(self, mx, my, center, camera):
+        """Return the 3-D move vector for the current drag, handling both axis
+        and plane modes.  Returns None if a plane ray cast misses."""
+        if self.dragging_axis in GIZMO_PLANES:
+            hit = math3d.ray_plane_intersect(tuple(camera.pos),
+                                             camera.screen_ray(mx, my),
+                                             self.drag_plane_hit0,
+                                             self.drag_plane_normal)
+            if hit is None:
+                return None
+            delta = math3d.vsub(hit, self.drag_plane_hit0)
+            a1, a2 = GIZMO_PLANES[self.dragging_axis][:2]
+            snap = self.translate_snap
+            s1 = round(math3d.dot(delta, a1) / snap) * snap
+            s2 = round(math3d.dot(delta, a2) / snap) * snap
+            return math3d.vadd(math3d.vscale(a1, s1), math3d.vscale(a2, s2))
+        else:
+            axis_dir = GIZMO_AXES[self.dragging_axis][0]
+            t = math3d.ray_line_closest_s(tuple(camera.pos),
+                                          camera.screen_ray(mx, my),
+                                          center, axis_dir)
+            return self._snap_move(t - self.drag_axis_t0, center, axis_dir)
+
     # ── Translate snap helper ─────────────────────────────────────────────────
     def _snap_move(self, delta, center, axis_dir):
         snap = self.translate_snap
@@ -307,22 +392,27 @@ class Gizmo:
                       sum(c[2] for c in cs)/len(cs)) if cs else (0.0, 0.0, 0.0)
             self.drag_before_snapshot = {p: list(vs)
                                          for p, vs in self.drag_start_verts_all.items()}
-        self.drag_axis_t0 = math3d.ray_line_closest_s(
-            tuple(camera.pos), camera.screen_ray(mx, my),
-            center, GIZMO_AXES[axis][0])
+        if axis in GIZMO_PLANES:
+            _, _, normal, _ = GIZMO_PLANES[axis]
+            hit = math3d.ray_plane_intersect(tuple(camera.pos),
+                                             camera.screen_ray(mx, my),
+                                             center, normal)
+            self.drag_plane_hit0   = hit if hit is not None else center
+            self.drag_plane_normal = normal
+        else:
+            self.drag_axis_t0 = math3d.ray_line_closest_s(
+                tuple(camera.pos), camera.screen_ray(mx, my),
+                center, GIZMO_AXES[axis][0])
 
     def _update_translate_drag(self, mx, my, state, camera):
         if self.dragging_axis is None: return
-        axis_dir = GIZMO_AXES[self.dragging_axis][0]
         if self.drag_start_vertex_verts:
             verts  = list(self.drag_start_vertex_verts.values())
             n      = len(verts)
             center = (sum(v[0] for v in verts)/n, sum(v[1] for v in verts)/n,
                       sum(v[2] for v in verts)/n)
-            t    = math3d.ray_line_closest_s(tuple(camera.pos),
-                                             camera.screen_ray(mx, my),
-                                             center, axis_dir)
-            move = self._snap_move(t - self.drag_axis_t0, center, axis_dir)
+            move = self._get_move(mx, my, center, camera)
+            if move is None: return
             poly_updates = {}
             for (poly, vi), start_v in self.drag_start_vertex_verts.items():
                 poly_updates.setdefault(poly, {})[vi] = math3d.vadd(start_v, move)
@@ -338,10 +428,8 @@ class Gizmo:
             n      = len(verts)
             center = (sum(v[0] for v in verts)/n, sum(v[1] for v in verts)/n,
                       sum(v[2] for v in verts)/n)
-            t    = math3d.ray_line_closest_s(tuple(camera.pos),
-                                             camera.screen_ray(mx, my),
-                                             center, axis_dir)
-            move = self._snap_move(t - self.drag_axis_t0, center, axis_dir)
+            move = self._get_move(mx, my, center, camera)
+            if move is None: return
             poly_updates = {}
             for (poly, vi), start_v in self.drag_start_edge_verts.items():
                 poly_updates.setdefault(poly, {})[vi] = math3d.vadd(start_v, move)
@@ -355,10 +443,8 @@ class Gizmo:
             cs = [math3d.poly_center(v) for v in self.drag_start_verts_all.values()]
             center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
                       sum(c[2] for c in cs)/len(cs))
-            t    = math3d.ray_line_closest_s(tuple(camera.pos),
-                                             camera.screen_ray(mx, my),
-                                             center, axis_dir)
-            move = self._snap_move(t - self.drag_axis_t0, center, axis_dir)
+            move = self._get_move(mx, my, center, camera)
+            if move is None: return
             for poly, start_verts in self.drag_start_verts_all.items():
                 poly.vertices = [math3d.vadd(v, move) for v in start_verts]
             state.notify_polygon_transformed(list(self.drag_start_verts_all.keys()))
