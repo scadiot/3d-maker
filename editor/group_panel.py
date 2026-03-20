@@ -58,10 +58,12 @@ class GroupPanel(tk.Frame):
         self._drag_objs: list = []
         self._drop_iid        = None
         self._hover_iid       = None
-        self._syncing         = False
-        self._hide_polygons   = True
-        self._hide_poly_btn   = None
-        self._visible_polys   = None  # None = tous ; set = filtre actif
+        self._syncing              = False
+        self._hide_polygons        = True
+        self._hide_poly_btn        = None
+        self._visible_polys        = None  # None = tous ; set = filtre actif
+        self._row_actions_group    = None   # Group currently shown in overlay
+        self._row_actions_hide_job = None   # pending after() cancel token
         if self._state is not None:
             self._state.subscribe('selection_changed', self._on_selection_changed)
             self._state.subscribe('current_group_changed', self._on_current_group_changed)
@@ -147,6 +149,26 @@ class GroupPanel(tk.Frame):
         self._tree.bind('<Double-ButtonPress-1>', self._on_double_click)
         self._tree.bind('<ButtonPress-3>',   self._on_right_click)
         self._tree.bind('<Delete>',          self._delete_selected)
+        self._tree.bind('<Motion>',          self._on_tree_motion)
+        self._tree.bind('<Leave>',           self._on_tree_leave)
+
+        # Row-action overlay (appears on hover over group rows)
+        self._row_actions = tk.Frame(self._tree, bg='#1e1e2c', bd=0)
+        _ra_btn = tk.Button(
+            self._row_actions, text='⊞',
+            command=self._row_action_select_all,
+            bg='#1e1e2c', fg='#7090e0',
+            activebackground='#2a2a3a', activeforeground='#a0b8ff',
+            relief='flat', bd=0, padx=5, pady=0,
+            font=('Segoe UI', 11), cursor='hand2',
+        )
+        _ra_btn.pack(side=tk.LEFT)
+        _Tooltip(_ra_btn, 'Select all polygons in group')
+        # Keep overlay visible when the mouse moves onto it / its children
+        self._row_actions.bind('<Enter>', self._on_row_actions_enter)
+        self._row_actions.bind('<Leave>', self._on_row_actions_leave)
+        _ra_btn.bind('<Enter>', self._on_row_actions_enter)
+        _ra_btn.bind('<Leave>', self._on_row_actions_leave)
 
         self.refresh()
 
@@ -687,6 +709,56 @@ class GroupPanel(tk.Frame):
             history.push(CompoundCommand(move_cmds) if len(move_cmds) > 1 else move_cmds[0])
         elif self._state is None:
             self.refresh()
+
+    # ── Row-action overlay ────────────────────────────────────────────────────
+
+    def _on_tree_motion(self, event):
+        iid = self._tree.identify_row(event.y)
+        if not iid:
+            self._schedule_hide_row_actions()
+            return
+        obj = self._iid_to_obj.get(iid)
+        if not isinstance(obj, Group):
+            self._schedule_hide_row_actions()
+            return
+        bbox = self._tree.bbox(iid)
+        if not bbox:
+            self._schedule_hide_row_actions()
+            return
+        self._cancel_hide_row_actions()
+        self._row_actions_group = obj
+        _x, y, w, h = bbox
+        overlay_w = self._row_actions.winfo_reqwidth() or 26
+        self._row_actions.place(x=_x + w - overlay_w, y=y, height=h)
+        self._row_actions.lift()
+
+    def _on_tree_leave(self, _event=None):
+        self._schedule_hide_row_actions()
+
+    def _on_row_actions_enter(self, _event=None):
+        self._cancel_hide_row_actions()
+
+    def _on_row_actions_leave(self, _event=None):
+        self._hide_row_actions()
+
+    def _schedule_hide_row_actions(self):
+        if self._row_actions_hide_job is None:
+            self._row_actions_hide_job = self._tree.after(
+                120, self._hide_row_actions)
+
+    def _cancel_hide_row_actions(self):
+        if self._row_actions_hide_job is not None:
+            self._tree.after_cancel(self._row_actions_hide_job)
+            self._row_actions_hide_job = None
+
+    def _hide_row_actions(self):
+        self._row_actions_hide_job = None
+        self._row_actions.place_forget()
+
+    def _row_action_select_all(self):
+        if self._row_actions_group is not None:
+            self._select_all_in_group(self._row_actions_group)
+            self._hide_row_actions()
 
     def _select_all_in_group(self, group: Group):
         flat    = all_polygons(self._scene.root)
