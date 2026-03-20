@@ -192,7 +192,7 @@ class ViewCube:
         """Start a smooth animation to align the camera with the clicked face."""
         yaw_t, pitch_t = FACE_TARGETS[face]
         if yaw_t is None:
-            yaw_t = camera.yaw  # preserve current yaw for top/bottom views
+            yaw_t = round(camera.yaw / 90.0) * 90.0  # snap to nearest 90° for top/bottom views
         self._yaw_start    = camera.yaw
         self._pitch_start  = camera.pitch
         self._yaw_target   = yaw_t
