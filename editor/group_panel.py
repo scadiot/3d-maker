@@ -6,6 +6,38 @@ from tkinter import ttk
 from editor.group import Group, Polygon, all_polygons, is_visible
 
 
+class _Tooltip:
+    """Simple hover tooltip for Tkinter widgets."""
+
+    def __init__(self, widget, text):
+        self._widget = widget
+        self._text   = text
+        self._win    = None
+        widget.bind('<Enter>', self._show, add='+')
+        widget.bind('<Leave>', self._hide, add='+')
+
+    def _show(self, event=None):
+        if self._win:
+            return
+        x = self._widget.winfo_rootx() + self._widget.winfo_width() // 2
+        y = self._widget.winfo_rooty() + self._widget.winfo_height() + 4
+        self._win = tw = tk.Toplevel(self._widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f'+{x}+{y}')
+        tk.Label(
+            tw, text=self._text,
+            bg='#2a2a3a', fg='#c8c8d8',
+            relief='flat', bd=1,
+            font=('Segoe UI', 9),
+            padx=6, pady=3,
+        ).pack()
+
+    def _hide(self, event=None):
+        if self._win:
+            self._win.destroy()
+            self._win = None
+
+
 class GroupPanel(tk.Frame):
     """Displays the Scene→Groups→Polygons tree with drag & drop between nodes."""
 
@@ -27,7 +59,7 @@ class GroupPanel(tk.Frame):
         self._drop_iid        = None
         self._hover_iid       = None
         self._syncing         = False
-        self._hide_polygons   = False
+        self._hide_polygons   = True
         self._hide_poly_btn   = None
         self._visible_polys   = None  # None = tous ; set = filtre actif
         if self._state is not None:
@@ -56,8 +88,8 @@ class GroupPanel(tk.Frame):
             b.bind('<Leave>', lambda _e, b=b: b.config(bg=self._BTN_BG))
             return b
 
-        make_btn('+', self._add_group)
-        make_btn('−', self._delete_selected)
+        _Tooltip(make_btn('+', self._add_group),      'Add group')
+        _Tooltip(make_btn('−', self._delete_selected), 'Delete selected')
 
         tk.Frame(toolbar, width=1, bg='#2a2a3a').pack(side=tk.LEFT, padx=4, fill=tk.Y, pady=2)
 
@@ -71,6 +103,7 @@ class GroupPanel(tk.Frame):
         self._hide_poly_btn.pack(side=tk.LEFT, padx=2, pady=2)
         self._hide_poly_btn.bind('<Enter>', lambda _e: self._hide_poly_btn.config(bg=self._BTN_ACT))
         self._hide_poly_btn.bind('<Leave>', lambda _e: self._refresh_hide_poly_btn())
+        _Tooltip(self._hide_poly_btn, 'Toggle polygon visibility')
 
         tk.Frame(self, height=1, bg='#2a2a3a').pack(side=tk.TOP, fill=tk.X)
 
