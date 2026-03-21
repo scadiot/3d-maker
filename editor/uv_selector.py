@@ -30,7 +30,7 @@ from OpenGL.GL import (
 from editor.constants import TEXTURE_PATH, PANEL_WIDTH
 
 _ZOOM_MIN = 1.0
-_ZOOM_MAX = 8.0
+_ZOOM_MAX = 32.0
 _SRC_MAX  = 1024   # max resolution of the source image kept in memory
 
 
@@ -564,6 +564,15 @@ class UVSelector(tk.Frame):
         elif (event.state & 0x0100) and self._uv_drag_vertex is not None:
             poly, idx = self._uv_drag_vertex
             u, v = self._canvas_to_uv(event.x, event.y)
+            atlas_w = getattr(self._scene, 'atlas_w', None)
+            atlas_h = getattr(self._scene, 'atlas_h', None)
+            if atlas_w and atlas_h:
+                u = round(u * atlas_w) / atlas_w
+                v = round(v * atlas_h) / atlas_h
+            elif self._src_img is not None:
+                sw, sh = self._src_img.size
+                u = round(u * sw) / sw
+                v = round(v * sh) / sh
             u = max(0.0, min(1.0, u))
             v = max(0.0, min(1.0, v))
             uvs       = list(poly.uvs)
