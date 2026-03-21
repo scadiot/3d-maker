@@ -333,3 +333,38 @@ class MoveGroupCommand(Command):
 
     def undo(self) -> None:
         self._state.move_group(self._group, self._old_parent)
+
+
+class SplitQuadCommand(Command):
+    """Split a quad (4-vertex polygon) into two triangles."""
+
+    def __init__(self, state, quad, tri1, tri2) -> None:
+        self._state = state
+        self._quad  = quad
+        self._group = quad.group
+        self._idx   = quad.group.polygons.index(quad)
+        self._tri1  = tri1
+        self._tri2  = tri2
+
+    def execute(self) -> None:
+        if self._quad in self._group.polygons:
+            self._group.polygons.remove(self._quad)
+            self._quad.group = None
+        self._group.adopt_polygon(self._tri1)
+        self._group.adopt_polygon(self._tri2)
+        self._state.set_selection(polygons=[self._tri1, self._tri2])
+        self._state._emit("scene_changed", change_type="polygon_added")
+
+    def undo(self) -> None:
+        if self._tri1 in self._group.polygons:
+            self._group.polygons.remove(self._tri1)
+            self._tri1.group = None
+        if self._tri2 in self._group.polygons:
+            self._group.polygons.remove(self._tri2)
+            self._tri2.group = None
+        if self._quad not in self._group.polygons:
+            self._group.polygons.insert(
+                min(self._idx, len(self._group.polygons)), self._quad)
+            self._quad.group = self._group
+        self._state.set_selection(polygons=[self._quad])
+        self._state._emit("scene_changed", change_type="polygon_added")

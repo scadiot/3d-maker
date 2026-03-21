@@ -37,6 +37,7 @@ from editor.history       import (HistoryManager, AddPolygonsCommand,
                                    DeletePolygonsCommand, PolyDataCommand,
                                    GroupCommand, UngroupCommand)
 from editor.group         import Group, all_polygons
+from editor.math3d        import normalize, cross, vsub, dot
 from editor.texture_atlas import TextureAtlas
 
 
@@ -511,6 +512,8 @@ class App:
         self._sep_edges.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
         self._btn_create_from_edges = add_btn(self._cmd_create_from_edges,
                                               "Create polygon from edges")
+        self._sep_split = tk.Frame(self.toolbar2, width=1, bg='#38384a')
+        self._btn_split = add_btn(self._cmd_split_quad, "Split")
         self._sync_toolbar2_btns()
 
     def _on_snap_change(self, *_):
@@ -536,6 +539,25 @@ class App:
                        pady=5 if w is self._sep_edges else 2)
             else:
                 w.pack_forget()
+
+        one_quad = (self.state.selection_mode == 'polygon'
+                    and len(self.state.selected_polygons) == 1
+                    and len(self.state.selected_polygons[0].vertices) == 4)
+        for w in (self._sep_split, self._btn_split):
+            if one_quad:
+                w.pack(side=tk.LEFT, fill=tk.Y if w is self._sep_split else tk.NONE,
+                       padx=5 if w is self._sep_split else 1,
+                       pady=5 if w is self._sep_split else 2)
+            else:
+                w.pack_forget()
+        if one_quad:
+            coplanar = self._quad_is_coplanar(self.state.selected_polygons[0])
+            if coplanar:
+                self._btn_split.config(state='normal', cursor='hand2',
+                                       bg='#16161f')
+            else:
+                self._btn_split.config(state='disabled', cursor='',
+                                       bg=self._BG_DIS)
 
     def _refresh_group_panel(self):
         if hasattr(self, 'group_panel'):
@@ -893,6 +915,16 @@ class App:
         self.scene.flip_orientation()
         after = {p: (list(p.vertices), list(p.uvs)) for p in polys}
         self.history.record(PolyDataCommand(self.state, before, after))
+
+    def _quad_is_coplanar(self, poly) -> bool:
+        """Returns True if all 4 vertices of the quad lie in the same plane."""
+        v = poly.vertices
+        n1 = normalize(cross(vsub(v[1], v[0]), vsub(v[2], v[0])))
+        n2 = normalize(cross(vsub(v[2], v[0]), vsub(v[3], v[0])))
+        return dot(n1, n2) > 0.9998
+
+    def _cmd_split_quad(self) -> None:
+        self.state.quad_splitting_mode = True
 
     def _cmd_create_from_edges(self) -> None:
         before_ids = {id(p) for p in all_polygons(self.scene.root)}
