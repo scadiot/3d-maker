@@ -4,8 +4,20 @@ from __future__ import annotations
 from typing import Iterator, List, Optional, Tuple, Union
 
 
-Vertex = Tuple[float, float, float]
-UV     = Tuple[float, float]
+Vertex  = Tuple[float, float, float]
+UV      = Tuple[float, float]
+Point2D = Tuple[float, float]
+
+
+class Segment:
+    """A 2D segment defined by two points."""
+
+    def __init__(self, a: Point2D, b: Point2D) -> None:
+        self.a: Point2D = a
+        self.b: Point2D = b
+
+    def __repr__(self) -> str:
+        return f"Segment({self.a}, {self.b})"
 
 
 class Polygon:
