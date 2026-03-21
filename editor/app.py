@@ -523,7 +523,7 @@ class App:
         self._btn_create_from_edges = add_btn(self._cmd_create_from_edges,
                                               "Create polygon from edges")
         self._sep_split = tk.Frame(self.toolbar2, width=1, bg='#38384a')
-        self._btn_split = add_btn(self._cmd_split_quad, "Split")
+        self._btn_split = add_btn(self._cmd_split_quad, "Split [K]")
         self._sync_toolbar2_btns()
 
     def _on_snap_change(self, *_):
@@ -842,6 +842,12 @@ class App:
 
         if key == 'v':
             self._toggle_vertex_glue()
+
+        if key == 'k':
+            one_poly = (self.state.selection_mode == 'polygon'
+                        and len(self.state.selected_polygons) == 1)
+            if one_poly and self._poly_is_coplanar(self.state.selected_polygons[0]):
+                self._cmd_split_quad()
 
         if key == 'return' and self.state.quad_splitting_mode:
             self._cmd_confirm_quad_split()
