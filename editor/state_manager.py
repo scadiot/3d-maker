@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Callable, Literal
 
-from editor.group import Group, Polygon, Segment, all_polygons
+from editor.group import Group, Polygon, all_polygons
 from editor.texture_atlas import TextureAtlas
 
 
@@ -48,7 +48,6 @@ class StateManager:
         self._textures_atlases: list[TextureAtlas] = []
         self._selection_enable: bool = True
         self._gizmo_enable: bool = True
-        self._polygon_split_segment: list[Segment] = []
 
     # ------------------------------------------------------------------ #
     # Accessors (read)                                                     #
@@ -127,15 +126,6 @@ class StateManager:
     @gizmo_enable.setter
     def gizmo_enable(self, value: bool) -> None:
         self._gizmo_enable = value
-
-    @property
-    def polygon_split_segment(self) -> list[Segment]:
-        """Segments used to split polygons in quad-splitting mode."""
-        return self._polygon_split_segment
-
-    @polygon_split_segment.setter
-    def polygon_split_segment(self, value: list[Segment]) -> None:
-        self._polygon_split_segment = value
 
     @property
     def modified(self) -> bool:
