@@ -46,6 +46,8 @@ class StateManager:
         self._vertex_glue: bool = False
         self._quad_splitting_mode: bool = False
         self._textures_atlases: list[TextureAtlas] = []
+        self._selection_enable: bool = True
+        self._gizmo_enable: bool = True
 
     # ------------------------------------------------------------------ #
     # Accessors (read)                                                     #
@@ -106,6 +108,24 @@ class StateManager:
     @quad_splitting_mode.setter
     def quad_splitting_mode(self, value: bool) -> None:
         self._quad_splitting_mode = value
+
+    @property
+    def selection_enable(self) -> bool:
+        """When True, selection interactions are enabled."""
+        return self._selection_enable
+
+    @selection_enable.setter
+    def selection_enable(self, value: bool) -> None:
+        self._selection_enable = value
+
+    @property
+    def gizmo_enable(self) -> bool:
+        """When True, the gizmo is enabled."""
+        return self._gizmo_enable
+
+    @gizmo_enable.setter
+    def gizmo_enable(self, value: bool) -> None:
+        self._gizmo_enable = value
 
     @property
     def modified(self) -> bool:

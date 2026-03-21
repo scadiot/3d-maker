@@ -961,9 +961,10 @@ class App:
         ctrl_held = 'shift_l' in self.keys_pressed  # Shift for multi-select
         multi     = len(self.scene.selected_indices) > 1
         sel_mode  = self.state.selection_mode
+        gizmo_on  = self.state.gizmo_enable
 
         if sel_mode == 'edge' and self.state.selected_edges:
-            axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera)
+            axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera) if gizmo_on else None
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
             else:
@@ -971,7 +972,7 @@ class App:
             return
 
         if sel_mode == 'vertex' and self.state.selected_vertices:
-            axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera)
+            axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera) if gizmo_on else None
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
             else:
@@ -983,7 +984,7 @@ class App:
             return
 
         if self.gizmo.mode == 'translate' or (multi and self.gizmo.mode == 'scale'):
-            axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera)
+            axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera) if gizmo_on else None
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
             elif sel_mode == 'edge':
@@ -992,7 +993,7 @@ class App:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
 
         elif self.gizmo.mode == 'rotate':
-            axis = self.gizmo.pick_rotate_axis(mx, my, self.state, self.camera)
+            axis = self.gizmo.pick_rotate_axis(mx, my, self.state, self.camera) if gizmo_on else None
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
             elif sel_mode == 'edge':
@@ -1001,7 +1002,7 @@ class App:
                 self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
 
         else:  # scale
-            handle = self.gizmo.pick_scale_handle(mx, my, self.state, self.camera)
+            handle = self.gizmo.pick_scale_handle(mx, my, self.state, self.camera) if gizmo_on else None
             if handle:
                 self.gizmo.start_drag(handle, mx, my, self.state, self.camera)
             elif sel_mode == 'edge':
@@ -1122,6 +1123,8 @@ class App:
         return self.scene.pick_vertex(tuple(self.camera.pos), self.camera.screen_ray(mx, my))
 
     def _apply_vertex_selection(self, vertex, ctrl_held):
+        if not self.state.selection_enable:
+            return
         if vertex is None:
             if not ctrl_held:
                 self.state.set_selection(vertices=[])
@@ -1142,6 +1145,8 @@ class App:
             self.state.set_selection(vertices=[vert_ref])
 
     def _apply_edge_selection(self, edge, ctrl_held):
+        if not self.state.selection_enable:
+            return
         if edge is None:
             if not ctrl_held:
                 self.state.set_selection(edges=[])
@@ -1163,6 +1168,8 @@ class App:
 
     def _apply_selection(self, clicked_idx, ctrl_held):
         """Applies selection based on Shift — goes through the StateManager."""
+        if not self.state.selection_enable:
+            return
         flat = all_polygons(self.scene.root)
         if ctrl_held:
             if clicked_idx >= 0 and clicked_idx < len(flat):
@@ -1192,7 +1199,7 @@ class App:
         dt  = now - self.last_time
         self.last_time = now
 
-        if self.gizmo.dragging_axis and self.mouse_btn1:
+        if self.state.gizmo_enable and self.gizmo.dragging_axis and self.mouse_btn1:
             self.gizmo.update_drag(self.mouse_x, self.mouse_y, self.state, self.camera)
 
         self.camera.apply_movement(self.keys_pressed, dt, panning=self.panning)
@@ -1217,5 +1224,6 @@ class App:
 
         draw_grid(30, 1)
         self.scene.draw()
-        self.gizmo.draw(self.state, self.camera)
+        if self.state.gizmo_enable:
+            self.gizmo.draw(self.state, self.camera)
         self.view_cube.draw(self.camera, vw, vh)
