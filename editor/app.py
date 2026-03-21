@@ -834,7 +834,10 @@ class App:
             self._toggle_vertex_glue()
 
         if key == 'escape':
-            self.state.clear_selection()
+            if self.state.quad_splitting_mode:
+                self._cmd_split_quad_escape()
+            else:
+                self.state.clear_selection()
 
         if key == 'e':
             modes = ['polygon', 'edge', 'vertex']
@@ -927,6 +930,11 @@ class App:
         self.state.quad_splitting_mode = True
         self.state.selection_enable = False
         self.state.gizmo_enable = False
+
+    def _cmd_split_quad_escape(self) -> None:
+        self.state.quad_splitting_mode = False
+        self.state.selection_enable = True
+        self.state.gizmo_enable = True
 
     def _cmd_create_from_edges(self) -> None:
         before_ids = {id(p) for p in all_polygons(self.scene.root)}
