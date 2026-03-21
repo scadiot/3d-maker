@@ -44,7 +44,7 @@ class StateManager:
         self._project_name: str = ""   # project name (without extension)
         self._project_path: str = ""   # absolute path to the project JSON file
         self._vertex_glue: bool = False
-        self._quad_splitting_mode: bool = False
+        self._polygon_splitting_mode: bool = False
         self._textures_atlases: list[TextureAtlas] = []
         self._selection_enable: bool = True
         self._gizmo_enable: bool = True
@@ -101,13 +101,13 @@ class StateManager:
         self._vertex_glue = value
 
     @property
-    def quad_splitting_mode(self) -> bool:
-        """When True, the editor is in quad-splitting mode."""
-        return self._quad_splitting_mode
+    def polygon_splitting_mode(self) -> bool:
+        """When True, the editor is in polygon-splitting mode."""
+        return self._polygon_splitting_mode
 
-    @quad_splitting_mode.setter
-    def quad_splitting_mode(self, value: bool) -> None:
-        self._quad_splitting_mode = value
+    @polygon_splitting_mode.setter
+    def polygon_splitting_mode(self, value: bool) -> None:
+        self._polygon_splitting_mode = value
 
     @property
     def selection_enable(self) -> bool:

@@ -335,8 +335,8 @@ class MoveGroupCommand(Command):
         self._state.move_group(self._group, self._old_parent)
 
 
-class SplitQuadCommand(Command):
-    """Split a quad (4-vertex polygon) into two triangles."""
+class SplitPolygonCommand(Command):
+    """Split a polygon into two parts."""
 
     def __init__(self, state, quad, tri1, tri2) -> None:
         self._state = state

@@ -89,7 +89,7 @@ class App:
         self.mouse_y           = 0
         self.last_time         = time.time()
         self._viewport_focused = False
-        # ── Quad-split drag state ──────────────────────────────────────────
+        # ── Polygon-split drag state ──────────────────────────────────────────
         self._split_polygon    = None   # Polygon being split
         self._split_dir        = None   # Direction parallel to nearest edge
         self._split_perp       = None   # Perpendicular direction in polygon plane
@@ -523,7 +523,7 @@ class App:
         self._btn_create_from_edges = add_btn(self._cmd_create_from_edges,
                                               "Create polygon from edges")
         self._sep_split = tk.Frame(self.toolbar2, width=1, bg='#38384a')
-        self._btn_split = add_btn(self._cmd_split_quad, "Split [K]")
+        self._btn_split = add_btn(self._cmd_split_polygon, "Split [K]")
         self._sync_toolbar2_btns()
 
     def _on_snap_change(self, *_):
@@ -847,14 +847,14 @@ class App:
             one_poly = (self.state.selection_mode == 'polygon'
                         and len(self.state.selected_polygons) == 1)
             if one_poly and self._poly_is_coplanar(self.state.selected_polygons[0]):
-                self._cmd_split_quad()
+                self._cmd_split_polygon()
 
-        if key == 'return' and self.state.quad_splitting_mode:
-            self._cmd_confirm_quad_split()
+        if key == 'return' and self.state.polygon_splitting_mode:
+            self._cmd_confirm_polygon_split()
 
         if key == 'escape':
-            if self.state.quad_splitting_mode:
-                self._cmd_split_quad_escape()
+            if self.state.polygon_splitting_mode:
+                self._cmd_split_polygon_escape()
             else:
                 self.state.clear_selection()
 
@@ -950,23 +950,23 @@ class App:
                 return False
         return True
 
-    def _cmd_split_quad(self) -> None:
-        self.state.quad_splitting_mode = True
+    def _cmd_split_polygon(self) -> None:
+        self.state.polygon_splitting_mode = True
         self.state.selection_enable = False
         self.state.gizmo_enable = False
 
-    def _cmd_split_quad_escape(self) -> None:
-        self.state.quad_splitting_mode = False
+    def _cmd_split_polygon_escape(self) -> None:
+        self.state.polygon_splitting_mode = False
         self.state.selection_enable = True
         self.state.gizmo_enable = True
         self._split_polygon = None
         self._split_seg = None
         self._splitting_active = False
 
-    # ── Quad-split helpers ────────────────────────────────────────────────────
+    # ── Polygon-split helpers ────────────────────────────────────────────────────
 
-    def _start_quad_split(self, mx, my):
-        """Begin a quad-split drag: create a blue segment parallel to the
+    def _start_polygon_split(self, mx, my):
+        """Begin a polygon-split drag: create a blue segment parallel to the
         nearest edge of the polygon under the cursor."""
         ray_o = tuple(self.camera.pos)
         ray_d = self.camera.screen_ray(mx, my)
@@ -1034,7 +1034,7 @@ class App:
             return (intersections[0], intersections[-1])
         return None
 
-    def _update_quad_split(self, mx, my):
+    def _update_polygon_split(self, mx, my):
         """Update the split segment to stay under the mouse pointer."""
         if self._split_polygon is None:
             return
@@ -1052,7 +1052,7 @@ class App:
             verts, self._split_dir, self._split_perp, self._split_origin, pv
         )
 
-    def _cmd_confirm_quad_split(self):
+    def _cmd_confirm_polygon_split(self):
         """Confirm the current split segment: create two polygons and delete the original."""
         if self._split_seg is None or self._split_polygon is None:
             return
@@ -1113,12 +1113,12 @@ class App:
         new_poly2 = PolyObj(verts2, uvs2)
         new_poly2.texture_atlas_id = poly.texture_atlas_id
 
-        from editor.history import SplitQuadCommand
-        cmd = SplitQuadCommand(self.state, poly, new_poly1, new_poly2)
+        from editor.history import SplitPolygonCommand
+        cmd = SplitPolygonCommand(self.state, poly, new_poly1, new_poly2)
         self.history.push(cmd)
 
         # Exit split mode after confirming
-        self._cmd_split_quad_escape()
+        self._cmd_split_polygon_escape()
 
     def _cmd_create_from_edges(self) -> None:
         before_ids = {id(p) for p in all_polygons(self.scene.root)}
@@ -1152,8 +1152,8 @@ class App:
         self.history.push(UngroupCommand(self.state, groups_info))
 
     def _handle_mouse_down_3d(self, mx, my):
-        if self.state.quad_splitting_mode:
-            self._start_quad_split(mx, my)
+        if self.state.polygon_splitting_mode:
+            self._start_polygon_split(mx, my)
             return
 
         ctrl_held = 'shift_l' in self.keys_pressed  # Shift for multi-select
@@ -1397,8 +1397,8 @@ class App:
         dt  = now - self.last_time
         self.last_time = now
 
-        if self.state.quad_splitting_mode and self._splitting_active and self.mouse_btn1:
-            self._update_quad_split(self.mouse_x, self.mouse_y)
+        if self.state.polygon_splitting_mode and self._splitting_active and self.mouse_btn1:
+            self._update_polygon_split(self.mouse_x, self.mouse_y)
         elif self.state.gizmo_enable and self.gizmo.dragging_axis and self.mouse_btn1:
             self.gizmo.update_drag(self.mouse_x, self.mouse_y, self.state, self.camera)
 
@@ -1429,7 +1429,7 @@ class App:
         self.view_cube.draw(self.camera, vw, vh)
 
         # ── Quad-split segment ─────────────────────────────────────────────
-        if self.state.quad_splitting_mode and self._split_seg is not None:
+        if self.state.polygon_splitting_mode and self._split_seg is not None:
             pt_a, pt_b = self._split_seg
             glDisable(GL_DEPTH_TEST)
             glLineWidth(2.5)
