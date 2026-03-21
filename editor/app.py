@@ -550,18 +550,17 @@ class App:
             else:
                 w.pack_forget()
 
-        one_quad = (self.state.selection_mode == 'polygon'
-                    and len(self.state.selected_polygons) == 1
-                    and len(self.state.selected_polygons[0].vertices) == 4)
+        one_poly = (self.state.selection_mode == 'polygon'
+                    and len(self.state.selected_polygons) == 1)
         for w in (self._sep_split, self._btn_split):
-            if one_quad:
+            if one_poly:
                 w.pack(side=tk.LEFT, fill=tk.Y if w is self._sep_split else tk.NONE,
                        padx=5 if w is self._sep_split else 1,
                        pady=5 if w is self._sep_split else 2)
             else:
                 w.pack_forget()
-        if one_quad:
-            coplanar = self._quad_is_coplanar(self.state.selected_polygons[0])
+        if one_poly:
+            coplanar = self._poly_is_coplanar(self.state.selected_polygons[0])
             if coplanar:
                 self._btn_split.config(state='normal', cursor='hand2',
                                        bg='#16161f')
@@ -933,12 +932,17 @@ class App:
         after = {p: (list(p.vertices), list(p.uvs)) for p in polys}
         self.history.record(PolyDataCommand(self.state, before, after))
 
-    def _quad_is_coplanar(self, poly) -> bool:
-        """Returns True if all 4 vertices of the quad lie in the same plane."""
+    def _poly_is_coplanar(self, poly) -> bool:
+        """Returns True if all vertices of the polygon lie in the same plane."""
         v = poly.vertices
-        n1 = normalize(cross(vsub(v[1], v[0]), vsub(v[2], v[0])))
-        n2 = normalize(cross(vsub(v[2], v[0]), vsub(v[3], v[0])))
-        return dot(n1, n2) > 0.9998
+        if len(v) <= 3:
+            return True
+        n0 = normalize(cross(vsub(v[1], v[0]), vsub(v[2], v[0])))
+        for i in range(3, len(v)):
+            ni = normalize(cross(vsub(v[i - 1], v[0]), vsub(v[i], v[0])))
+            if dot(n0, ni) <= 0.9998:
+                return False
+        return True
 
     def _cmd_split_quad(self) -> None:
         self.state.quad_splitting_mode = True
