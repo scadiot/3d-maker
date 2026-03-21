@@ -925,6 +925,8 @@ class App:
 
     def _cmd_split_quad(self) -> None:
         self.state.quad_splitting_mode = True
+        self.state.selection_enable = False
+        self.state.gizmo_enable = False
 
     def _cmd_create_from_edges(self) -> None:
         before_ids = {id(p) for p in all_polygons(self.scene.root)}
