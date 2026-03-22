@@ -284,7 +284,7 @@ class Scene:
 
     def _clone_group(self, group, parent):
         """Recursively clones a group into the given parent."""
-        clone = parent.add_group(group.name + " copy")
+        clone = parent.add_group(group.name)
         clone.hidden = group.hidden
         clone.locked = group.locked
         for poly in group.polygons:
@@ -605,6 +605,7 @@ class Scene:
 
         # ── Locked-group outlines — red edges for polygons in a selected locked group ──
         if locked_group_outline_verts:
+            glDisable(GL_DEPTH_TEST)
             glLineWidth(2.5)
             glColor4f(1.0, 0.15, 0.15, 0.9)
             glBegin(GL_LINES)
@@ -614,6 +615,7 @@ class Scene:
                     glVertex3f(*poly[i]);  glVertex3f(*poly[(i + 1) % n])
             glEnd()
             glLineWidth(1.0)
+            glEnable(GL_DEPTH_TEST)
 
         # ── Selection outlines — 1 batched call, no depth test ───────────────
         if selected_polys_verts:

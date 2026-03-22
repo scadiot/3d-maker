@@ -93,6 +93,7 @@ def import_json(scene, path: str) -> None:
 
     import_name = data.get("name") or "Import"
     import_group = scene.root.add_group(import_name)
+    import_group.locked = True
     load_group(data["root"], import_group)
     scene._emit_scene_changed("polygons_added")
 

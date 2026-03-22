@@ -222,10 +222,10 @@ class GroupPanel(tk.Frame):
     def _insert_group(self, group: Group, parent_iid: str):
         if group.is_root:
             text = '⬡ Scene'
-        elif group.hidden:
-            text = f'▶ {group.name}  [hidden]'
         else:
-            text = f'▶ {group.name}'
+            icon = '▣' if getattr(group, 'locked', False) else '▶'
+            suffix = '  [hidden]' if group.hidden else ''
+            text = f'{icon} {group.name}{suffix}'
         tags = ('hidden',) if group.hidden else ()
         iid  = self._tree.insert(parent_iid, 'end', text=text, open=True, tags=tags)
         self._iid_to_obj[iid] = group
