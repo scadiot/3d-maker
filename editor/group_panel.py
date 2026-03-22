@@ -492,11 +492,13 @@ class GroupPanel(tk.Frame):
         # Pure group selection (no polygons in the treeview selection)
         if selected_groups and not poly_iids:
             if self._state is not None:
-                self._state.set_current_group(selected_groups[0])
+                if not getattr(selected_groups[0], 'locked', False):
+                    self._state.set_current_group(selected_groups[0])
                 self._state.selected_groups = selected_groups
                 self._state.set_selection(polygons=[], edges=[], vertices=[])
             else:
-                self._app.current_group = selected_groups[0]
+                if not getattr(selected_groups[0], 'locked', False):
+                    self._app.current_group = selected_groups[0]
             return
 
         # Polygon selection (possibly alongside groups in the treeview)

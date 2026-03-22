@@ -565,7 +565,7 @@ class Scene:
 
             # Collect outline vertices into buckets
             in_selected_group = sel_group_ids and any(
-                id(node) in sel_group_ids
+                id(node) in sel_group_ids and getattr(node, 'locked', False)
                 for node in iter_ancestors(poly_obj)
             )
             if id(poly_obj) in sel_poly_ids:
