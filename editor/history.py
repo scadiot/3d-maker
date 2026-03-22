@@ -176,15 +176,20 @@ class PolyDataCommand(Command):
 # ── Group commands ─────────────────────────────────────────────────────────────
 
 class GroupCommand(Command):
-    """Grouping of polygons into a new sub-group."""
+    """Grouping of polygons and/or groups into a new sub-group."""
 
-    def __init__(self, state, polys: list, old_groups: dict, new_group, parent) -> None:
+    def __init__(self, state, polys: list, old_groups: dict, new_group, parent,
+                 sub_groups: list = None, old_parents: dict = None) -> None:
         # old_groups: {Polygon: (Group, int)} — original group and index
+        # sub_groups: list of Group to move into new_group
+        # old_parents: {Group: (parent_Group, int)} — original parent and index
         self._state      = state
         self._polys      = list(polys)
         self._old_groups = old_groups
         self._new_group  = new_group
         self._parent     = parent
+        self._sub_groups  = list(sub_groups) if sub_groups else []
+        self._old_parents = old_parents or {}
 
     def execute(self) -> None:
         if self._new_group not in self._parent.children:
@@ -192,6 +197,8 @@ class GroupCommand(Command):
             self._new_group.parent = self._parent
         for p in self._polys:
             self._new_group.adopt_polygon(p)
+        for g in self._sub_groups:
+            self._new_group.adopt_group(g)
         self._state._emit("scene_changed", change_type="group_added",
                           group=self._new_group, parent=self._parent)
 
@@ -201,6 +208,12 @@ class GroupCommand(Command):
                 self._new_group.polygons.remove(p)
             old_g.polygons.insert(min(idx, len(old_g.polygons)), p)
             p.group = old_g
+        for g in self._sub_groups:
+            old_p, idx = self._old_parents[g]
+            if g in self._new_group.children:
+                self._new_group.children.remove(g)
+            g.parent = old_p
+            old_p.children.insert(min(idx, len(old_p.children)), g)
         if (not self._new_group.polygons and not self._new_group.children
                 and self._new_group in self._parent.children):
             self._parent.remove_group(self._new_group)

@@ -1244,14 +1244,18 @@ class App:
         self._record_added_polygons(before_ids)
 
     def _cmd_group(self) -> None:
-        polys = self.state.selected_polygons
-        if len(polys) < 2:
+        polys       = self.state.selected_polygons
+        sub_groups  = self.state.selected_groups
+        if len(polys) + len(sub_groups) < 2:
             return
-        old_groups = {p: (p.group, p.group.polygons.index(p)) for p in polys}
-        parent = self.scene.root
-        new_group = Group(name="Group")
+        old_groups  = {p: (p.group, p.group.polygons.index(p)) for p in polys}
+        old_parents = {g: (g.parent, g.parent.children.index(g)) for g in sub_groups}
+        parent      = self.scene.root
+        new_group   = Group(name="Group")
         self.history.push(GroupCommand(self.state, polys, old_groups,
-                                       new_group, parent))
+                                       new_group, parent,
+                                       sub_groups=sub_groups,
+                                       old_parents=old_parents))
 
     def _cmd_ungroup(self) -> None:
         polys = self.state.selected_polygons
