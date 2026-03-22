@@ -850,8 +850,8 @@ class App:
         if key == 'c':
             self._cmd_duplicate()
 
-        if key == 'space' and self.scene.selected_indices and not self.state.extrusion_mode:
-            self.gizmo.cycle_mode(len(self.scene.selected_indices) > 1)
+        if key == 'space' and (self.scene.selected_indices or self.state.selected_groups) and not self.state.extrusion_mode:
+            self.gizmo.cycle_mode(len(self.scene.selected_indices) > 1 or bool(self.state.selected_groups))
             self._sync_gizmo_btns()
 
         if key == 'g' and len(self.scene.selected_indices) >= 2:
@@ -1275,7 +1275,7 @@ class App:
             return
 
         ctrl_held = 'shift_l' in self.keys_pressed  # Shift for multi-select
-        multi     = len(self.scene.selected_indices) > 1
+        multi     = len(self.scene.selected_indices) > 1 or bool(self.state.selected_groups)
         sel_mode  = self.state.selection_mode
         gizmo_on  = self.state.gizmo_enable
 
