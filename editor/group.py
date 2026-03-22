@@ -35,6 +35,7 @@ class Group:
         self.children: List['Group']     = []
         self.polygons: List[Polygon]     = []
         self.hidden:   bool              = False
+        self.locked:   bool              = False
 
     # ── Add ────────────────────────────────────────────────────────────────────
 

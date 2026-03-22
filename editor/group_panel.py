@@ -576,6 +576,11 @@ class GroupPanel(tk.Frame):
                              command=lambda: self._set_group_hidden(clicked_obj, True))
             menu.add_command(label='Show',
                              command=lambda: self._set_group_hidden(clicked_obj, False))
+            menu.add_separator()
+            menu.add_command(label='Lock',
+                             command=lambda: self._set_group_locked(clicked_obj, True))
+            menu.add_command(label='Unlock',
+                             command=lambda: self._set_group_locked(clicked_obj, False))
             has_items = True
 
         if movable:
@@ -774,6 +779,13 @@ class GroupPanel(tk.Frame):
         self.refresh()
         if self._state is not None:
             self._state.notify('scene_changed', change_type='visibility')
+
+    def _set_group_locked(self, group: Group, locked: bool):
+        """Locks or unlocks a group and refreshes the display."""
+        group.locked = locked
+        self.refresh()
+        if self._state is not None:
+            self._state.notify('scene_changed', change_type='lock')
 
     def _is_ancestor(self, group: Group, candidate: Group) -> bool:
         node = candidate
