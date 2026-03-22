@@ -931,6 +931,13 @@ class App:
             if not new_groups:
                 return
             cmds = [AddGroupCommand(self.state, g, g.parent) for g in new_groups]
+            if self.state.selected_polygons:
+                before_ids = {id(p) for p in all_polygons(self.scene.root)}
+                self.scene.duplicate_selected()
+                new_polys = [p for p in all_polygons(self.scene.root)
+                             if id(p) not in before_ids]
+                if new_polys:
+                    cmds.append(AddPolygonsCommand(self.state, new_polys))
             cmd = cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
             self.history.record(cmd)
         else:
