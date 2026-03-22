@@ -75,6 +75,11 @@ class HistoryManager:
         return True
 
     @property
+    def depth(self) -> int:
+        """Number of commands currently in the undo stack."""
+        return len(self._undo)
+
+    @property
     def can_undo(self) -> bool:
         return bool(self._undo)
 
@@ -333,6 +338,31 @@ class MoveGroupCommand(Command):
 
     def undo(self) -> None:
         self._state.move_group(self._group, self._old_parent)
+
+
+class ExtrudeEdgesCommand(Command):
+    """Extrude one or more edges into new quad faces."""
+
+    def __init__(self, state, new_polys: list, orig_edges: list, new_top_edges: list) -> None:
+        self._state         = state
+        self._polys         = list(new_polys)
+        self._groups        = {p: p.group for p in new_polys}
+        self._orig_edges    = list(orig_edges)    # [(Polygon, int)]
+        self._new_top_edges = list(new_top_edges) # [(Polygon, int)]
+
+    def execute(self) -> None:
+        for p in self._polys:
+            g = self._groups[p]
+            if p not in g.polygons:
+                g.adopt_polygon(p)
+        self._state._emit("scene_changed", change_type="polygon_added")
+        self._state.set_selection_mode("edge")
+        self._state.set_selection(edges=self._new_top_edges, polygons=[])
+
+    def undo(self) -> None:
+        self._state.delete_polygons(self._polys)
+        self._state.set_selection_mode("edge")
+        self._state.set_selection(edges=self._orig_edges, polygons=[])
 
 
 class SplitPolygonCommand(Command):

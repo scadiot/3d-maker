@@ -36,8 +36,9 @@ from editor.group_panel   import GroupPanel
 from editor.state_manager import StateManager
 from editor.history       import (HistoryManager, AddPolygonsCommand,
                                    DeletePolygonsCommand, PolyDataCommand,
-                                   GroupCommand, UngroupCommand)
-from editor.group         import Group, all_polygons
+                                   GroupCommand, UngroupCommand,
+                                   ExtrudeEdgesCommand)
+from editor.group         import Group, Polygon, all_polygons
 from editor.math3d        import (normalize, cross, vsub, vadd, vscale, dot,
                                   vlength, ray_plane_intersect,
                                   closest_point_on_seg)
@@ -89,6 +90,10 @@ class App:
         self.mouse_y           = 0
         self.last_time         = time.time()
         self._viewport_focused = False
+        # ── Extrusion mode state ──────────────────────────────────────────────
+        self._extrude_prev_gizmo_mode  = 'translate'  # mode to restore on exit
+        self._extrude_history_depth    = 0            # undo depth before extrusion
+
         # ── Polygon-split drag state ──────────────────────────────────────────
         self._split_polygon    = None   # Polygon being split
         self._split_dir        = None   # Direction parallel to nearest edge
@@ -116,7 +121,7 @@ class App:
         self._build_viewport()
         self._bind_events()
 
-        self.state.subscribe('selection_changed', lambda **_: self._sync_toolbar2_btns())
+        self.state.subscribe('selection_changed', lambda **_: self._on_selection_changed())
         self.state.subscribe('scene_changed', lambda **_: self._update_title())
         self.state.subscribe('polygon_transformed', lambda **_: self._update_title())
         self.state.subscribe('textures_changed', lambda atlases, **_: [self.scene.load_atlas(a) for a in atlases])
@@ -524,6 +529,8 @@ class App:
                                               "Create polygon from edges")
         self._sep_split = tk.Frame(self.toolbar2, width=1, bg='#38384a')
         self._btn_split = add_btn(self._cmd_split_polygon, "Split [K]")
+        self._sep_extrude = tk.Frame(self.toolbar2, width=1, bg='#38384a')
+        self._btn_extrude = add_btn(self._cmd_start_extrusion, "Extrude")
         self._sync_toolbar2_btns()
 
     def _on_snap_change(self, *_):
@@ -538,6 +545,12 @@ class App:
     def _toggle_vertex_glue(self):
         self.state.vertex_glue = not self.state.vertex_glue
         self._btn_vertex_glue.config(bg='#2d4080' if self.state.vertex_glue else '#16161f')
+
+    def _on_selection_changed(self):
+        if self.state.extrusion_mode and not self.state.selected_edges:
+            self._cmd_exit_extrusion(confirm=True)
+            return
+        self._sync_toolbar2_btns()
 
     def _sync_toolbar2_btns(self):
         two_edges = len(self.state.selected_edges) == 2
@@ -568,14 +581,26 @@ class App:
                 self._btn_split.config(state='disabled', cursor='',
                                        bg=self._BG_DIS)
 
+        has_edges = (self.state.selection_mode == 'edge'
+                     and len(self.state.selected_edges) >= 1
+                     and not self.state.extrusion_mode)
+        for w in (self._sep_extrude, self._btn_extrude):
+            if has_edges:
+                w.pack(side=tk.LEFT, fill=tk.Y if w is self._sep_extrude else tk.NONE,
+                       padx=5 if w is self._sep_extrude else 1,
+                       pady=5 if w is self._sep_extrude else 2)
+            else:
+                w.pack_forget()
+
     def _refresh_group_panel(self):
         if hasattr(self, 'group_panel'):
             self.group_panel.refresh()
 
     def _sync_gizmo_btns(self):
         restricted = self.state.selection_mode in ('vertex', 'edge')
+        extruding  = self.state.extrusion_mode
         for mode, (btn, bg_off, bg_on) in self._gizmo_btns.items():
-            disabled = restricted and mode in ('rotate', 'scale')
+            disabled = extruding or (restricted and mode in ('rotate', 'scale'))
             if disabled:
                 btn.config(state='disabled', bg=self._BG_DIS, cursor='')
             else:
@@ -824,7 +849,7 @@ class App:
         if key == 'c':
             self._cmd_duplicate()
 
-        if key == 'space' and self.scene.selected_indices:
+        if key == 'space' and self.scene.selected_indices and not self.state.extrusion_mode:
             self.gizmo.cycle_mode(len(self.scene.selected_indices) > 1)
             self._sync_gizmo_btns()
 
@@ -849,12 +874,17 @@ class App:
             if one_poly and self._poly_is_coplanar(self.state.selected_polygons[0]):
                 self._cmd_split_polygon()
 
-        if key == 'return' and self.state.polygon_splitting_mode:
-            self._cmd_confirm_polygon_split()
+        if key == 'return':
+            if self.state.polygon_splitting_mode:
+                self._cmd_confirm_polygon_split()
+            elif self.state.extrusion_mode:
+                self._cmd_exit_extrusion(confirm=True)
 
         if key == 'escape':
             if self.state.polygon_splitting_mode:
                 self._cmd_split_polygon_escape()
+            elif self.state.extrusion_mode:
+                self._cmd_exit_extrusion(confirm=False)
             else:
                 self.state.clear_selection()
 
@@ -949,6 +979,66 @@ class App:
             if dot(n0, ni) <= 0.9998:
                 return False
         return True
+
+    def _cmd_start_extrusion(self) -> None:
+        """Enter extrusion mode: create a quad face for each selected edge, then
+        select the new top edges so the translate gizmo can move them."""
+        edges = list(self.state.selected_edges)
+        if not edges:
+            return
+
+        new_polys: list[Polygon] = []
+        new_top_edges: list[tuple] = []
+
+        for poly, edge_idx in edges:
+            n = len(poly.vertices)
+            v0 = tuple(poly.vertices[edge_idx])
+            v1 = tuple(poly.vertices[(edge_idx + 1) % n])
+            uv0 = tuple(poly.uvs[edge_idx]) if edge_idx < len(poly.uvs) else (0.0, 0.0)
+            uv1 = tuple(poly.uvs[(edge_idx + 1) % n]) if len(poly.uvs) > 0 else (0.0, 0.0)
+
+            # New quad: bottom=original edge (reversed for correct outward normal),
+            # top=copy at same position. Vertex layout: [v1, v0, v0_copy(2), v1_copy(3)]
+            new_poly = Polygon(
+                vertices=[list(v1), list(v0), list(v0), list(v1)],
+                uvs=[list(uv1), list(uv0), list(uv0), list(uv1)],
+            )
+            new_poly.texture_atlas_id = poly.texture_atlas_id
+            target = poly.group if poly.group is not None else self.state.root_group
+            target.adopt_polygon(new_poly)
+
+            new_polys.append(new_poly)
+            new_top_edges.append((new_poly, 2))  # edge 2 = v1_copy -> v0_copy
+
+        self.state._emit("scene_changed", change_type="polygon_added")
+        self._extrude_history_depth = self.history.depth  # depth before recording
+        cmd = ExtrudeEdgesCommand(self.state, new_polys, edges, new_top_edges)
+        self.history.record(cmd)
+
+        self.state.set_selection(edges=new_top_edges, polygons=[])
+
+        self._extrude_prev_gizmo_mode = self.gizmo.mode
+        self.state.extrusion_mode = True
+        self.state.selection_enable = False
+        self.gizmo.mode = 'translate'
+        self._sync_gizmo_btns()
+        self._sync_toolbar2_btns()
+
+    def _cmd_exit_extrusion(self, confirm: bool = True) -> None:
+        """Exit extrusion mode.
+        confirm=True  (Enter)  — keep the extruded faces.
+        confirm=False (Escape) — undo all actions done during extrusion.
+        """
+        if not confirm:
+            # Undo every command recorded since extrusion started
+            # (gizmo transforms + the ExtrudeEdgesCommand itself)
+            while self.history.depth > self._extrude_history_depth:
+                self.history.undo()
+        self.state.extrusion_mode = False
+        self.state.selection_enable = True
+        self.gizmo.mode = self._extrude_prev_gizmo_mode
+        self._sync_gizmo_btns()
+        self._sync_toolbar2_btns()
 
     def _cmd_split_polygon(self) -> None:
         self.state.polygon_splitting_mode = True

@@ -45,6 +45,7 @@ class StateManager:
         self._project_path: str = ""   # absolute path to the project JSON file
         self._vertex_glue: bool = False
         self._polygon_splitting_mode: bool = False
+        self._extrusion_mode: bool = False
         self._textures_atlases: list[TextureAtlas] = []
         self._selection_enable: bool = True
         self._gizmo_enable: bool = True
@@ -108,6 +109,15 @@ class StateManager:
     @polygon_splitting_mode.setter
     def polygon_splitting_mode(self, value: bool) -> None:
         self._polygon_splitting_mode = value
+
+    @property
+    def extrusion_mode(self) -> bool:
+        """When True, the editor is in edge-extrusion mode."""
+        return self._extrusion_mode
+
+    @extrusion_mode.setter
+    def extrusion_mode(self, value: bool) -> None:
+        self._extrusion_mode = value
 
     @property
     def selection_enable(self) -> bool:
