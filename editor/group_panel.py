@@ -750,7 +750,7 @@ class GroupPanel(tk.Frame):
             self._schedule_hide_row_actions()
             return
         obj = self._iid_to_obj.get(iid)
-        if not isinstance(obj, Group):
+        if not isinstance(obj, Group) or getattr(obj, 'locked', False):
             self._schedule_hide_row_actions()
             return
         bbox = self._tree.bbox(iid)
