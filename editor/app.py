@@ -1422,6 +1422,7 @@ class App:
                 current.append(group)
         else:
             current = [group]
+            self.state.set_selection(polygons=[], edges=[], vertices=[])
         self.state.selected_groups = current
 
     def _handle_polygon_click(self, mx, my, shift_held):

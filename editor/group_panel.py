@@ -495,7 +495,9 @@ class GroupPanel(tk.Frame):
         if not indices:
             return
         if self._state is not None:
-            self._state.selected_groups = []
+            shift_held = 'shift_l' in getattr(self._app, 'keys_pressed', set())
+            if not shift_held:
+                self._state.selected_groups = []
         self._scene.selected_indices = indices
         self._scene.selected_idx     = max(indices)
 
