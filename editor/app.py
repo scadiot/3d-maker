@@ -784,6 +784,8 @@ class App:
     def _on_middle_down(self, event):
         self.viewport.focus_set()
         self.panning = True
+        self.pan_anchor_x = event.x_root
+        self.pan_anchor_y = event.y_root
         self.pan_last_x = event.x_root
         self.pan_last_y = event.y_root
         self.viewport.config(cursor='none')
@@ -803,11 +805,9 @@ class App:
         dy = event.y_root - self.pan_last_y
         if dx or dy:
             self.camera.apply_mouse_look(dx, dy)
-            cx = self.viewport.winfo_rootx() + self.viewport.winfo_width() // 2
-            cy = self.viewport.winfo_rooty() + self.viewport.winfo_height() // 2
-            ctypes.windll.user32.SetCursorPos(cx, cy)
-            self.pan_last_x = cx
-            self.pan_last_y = cy
+            ctypes.windll.user32.SetCursorPos(self.pan_anchor_x, self.pan_anchor_y)
+            self.pan_last_x = self.pan_anchor_x
+            self.pan_last_y = self.pan_anchor_y
 
     # ── Viewport focus ────────────────────────────────────────────────────────
     def _on_viewport_focus_in(self, _event):
