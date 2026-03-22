@@ -62,6 +62,9 @@ class GroupPanel(tk.Frame):
         self._hide_polygons        = True
         self._hide_poly_btn        = None
         self._visible_polys        = None  # None = tous ; set = filtre actif
+        self._hide_locked_groups   = True
+        self._hide_locked_group_btn = None
+        self._visible_locked_groups = None  # None = tous ; set = filtre actif
         self._row_actions_group    = None   # Group currently shown in overlay
         self._row_actions_hide_job = None   # pending after() cancel token
         if self._state is not None:
@@ -106,6 +109,18 @@ class GroupPanel(tk.Frame):
         self._hide_poly_btn.bind('<Enter>', lambda _e: self._hide_poly_btn.config(bg=self._BTN_ACT))
         self._hide_poly_btn.bind('<Leave>', lambda _e: self._refresh_hide_poly_btn())
         _Tooltip(self._hide_poly_btn, 'Toggle polygon visibility')
+
+        self._hide_locked_group_btn = tk.Button(
+            toolbar, text='▣', command=self._toggle_hide_locked_groups,
+            bg=self._BTN_BG, fg=self._FG,
+            activebackground=self._BTN_ACT, activeforeground=self._FG,
+            relief='flat', bd=0, font=('Segoe UI', 12), width=3,
+            cursor='hand2',
+        )
+        self._hide_locked_group_btn.pack(side=tk.LEFT, padx=2, pady=2)
+        self._hide_locked_group_btn.bind('<Enter>', lambda _e: self._hide_locked_group_btn.config(bg=self._BTN_ACT))
+        self._hide_locked_group_btn.bind('<Leave>', lambda _e: self._refresh_hide_locked_group_btn())
+        _Tooltip(self._hide_locked_group_btn, 'Toggle locked group visibility')
 
         tk.Frame(self, height=1, bg='#2a2a3a').pack(side=tk.TOP, fill=tk.X)
 
@@ -185,6 +200,17 @@ class GroupPanel(tk.Frame):
         color = '#2a2a6a' if self._hide_polygons else self._BTN_BG
         self._hide_poly_btn.config(bg=color)
 
+    def _toggle_hide_locked_groups(self):
+        """Toggles the hide-locked-groups mode in the treeview."""
+        self._hide_locked_groups = not self._hide_locked_groups
+        self._refresh_hide_locked_group_btn()
+        self.refresh()
+
+    def _refresh_hide_locked_group_btn(self):
+        """Updates the button color based on the active state."""
+        color = '#2a2a6a' if self._hide_locked_groups else self._BTN_BG
+        self._hide_locked_group_btn.config(bg=color)
+
     def refresh(self):
         """Rebuilds the tree from scene.root."""
         self._iid_to_obj.clear()
@@ -196,6 +222,11 @@ class GroupPanel(tk.Frame):
                                    if i < len(flat)}
         else:
             self._visible_polys = None
+        if self._hide_locked_groups:
+            sg = getattr(self._state, 'selected_groups', []) if self._state else []
+            self._visible_locked_groups = set(sg)
+        else:
+            self._visible_locked_groups = None
         self._insert_group(self._scene.root, '')
         self.sync_selection(self._scene.selected_indices)
 
@@ -208,8 +239,8 @@ class GroupPanel(tk.Frame):
         flat    = all_polygons(self._scene.root)
         idx_map = {id(p): i for i, p in enumerate(flat)}
         indices = {idx_map[id(p)] for p in polygons if id(p) in idx_map}
-        if self._hide_polygons:
-            # Rebuild the tree: visible polygons may have changed
+        if self._hide_polygons or self._hide_locked_groups:
+            # Rebuild the tree: visible items may have changed
             self.refresh()
         else:
             self.sync_selection(indices)
@@ -220,6 +251,9 @@ class GroupPanel(tk.Frame):
             self._app._update_statusbar()
 
     def _insert_group(self, group: Group, parent_iid: str):
+        if not group.is_root and getattr(group, 'locked', False):
+            if self._visible_locked_groups is not None and group not in self._visible_locked_groups:
+                return
         if group.is_root:
             text = '⬡ Scene'
         else:
