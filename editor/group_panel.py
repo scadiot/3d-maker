@@ -370,9 +370,10 @@ class GroupPanel(tk.Frame):
             obj = self._iid_to_obj.get(hovered_iid)
             if obj is not None:
                 target_group = obj if isinstance(obj, Group) else (obj.group or self._scene.root)
-                new_hover_iid = next(
-                    (i for i, o in self._iid_to_obj.items() if o is target_group), None
-                )
+                if not getattr(target_group, 'locked', False):
+                    new_hover_iid = next(
+                        (i for i, o in self._iid_to_obj.items() if o is target_group), None
+                    )
         if new_hover_iid != self._hover_iid:
             if self._hover_iid:
                 self._tree.item(self._hover_iid, tags=())
@@ -406,6 +407,9 @@ class GroupPanel(tk.Frame):
         # Target group: the group itself, or the group of the target polygon
         target_group = (target_obj if isinstance(target_obj, Group)
                         else (target_obj.group or self._scene.root))
+
+        if getattr(target_group, 'locked', False):
+            return
 
         moved = False
         history = getattr(self._app, 'history', None)
