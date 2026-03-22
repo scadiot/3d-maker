@@ -38,7 +38,7 @@ from editor.history       import (HistoryManager, AddPolygonsCommand,
                                    DeletePolygonsCommand, PolyDataCommand,
                                    GroupCommand, UngroupCommand,
                                    ExtrudeEdgesCommand, AddGroupCommand,
-                                   CompoundCommand)
+                                   DeleteGroupCommand, CompoundCommand)
 from editor.group         import Group, Polygon, all_polygons
 from editor.math3d        import (normalize, cross, vsub, vadd, vscale, dot,
                                   vlength, ray_plane_intersect,
@@ -844,7 +844,7 @@ class App:
             else:
                 self.scene.open_tex_preview(self.root)
 
-        if key == 'delete' and self.scene.selected_indices:
+        if key == 'delete' and (self.scene.selected_indices or self.state.selected_groups):
             self._cmd_delete()
 
         if key == 'c':
@@ -939,20 +939,32 @@ class App:
             self._record_added_polygons(before_ids)
 
     def _cmd_delete(self) -> None:
+        commands = []
+
+        groups = self.state.selected_groups
+        if groups:
+            for g in groups:
+                commands.append(DeleteGroupCommand(self.state, g))
+
         polys = self.state.selected_polygons
-        if not polys:
+        if polys:
+            saved = []
+            for p in polys:
+                if p.group is not None:
+                    try:
+                        idx = p.group.polygons.index(p)
+                    except ValueError:
+                        idx = len(p.group.polygons)
+                    saved.append((p, p.group, idx))
+            if saved:
+                commands.append(DeletePolygonsCommand(self.state, saved))
+
+        if not commands:
             return
-        saved = []
-        for p in polys:
-            if p.group is not None:
-                try:
-                    idx = p.group.polygons.index(p)
-                except ValueError:
-                    idx = len(p.group.polygons)
-                saved.append((p, p.group, idx))
-        if not saved:
-            return
-        self.history.push(DeletePolygonsCommand(self.state, saved))
+        if len(commands) == 1:
+            self.history.push(commands[0])
+        else:
+            self.history.push(CompoundCommand(commands))
         self.gizmo.stop_drag()
 
     def _cmd_uv_assigned(self, before: dict, after: dict) -> None:
