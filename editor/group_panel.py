@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 
-from editor.group import Group, Polygon, all_polygons, is_visible
+from editor.group import Group, Polygon, all_polygons, is_visible, is_locked
 
 
 class _Tooltip:
@@ -793,12 +793,34 @@ class GroupPanel(tk.Frame):
             self._hide_row_actions()
 
     def _select_all_in_group(self, group: Group):
-        flat    = all_polygons(self._scene.root)
-        polys   = all_polygons(group)
-        indices = {flat.index(p) for p in polys if p in flat}
-        if not indices:
+        flat  = all_polygons(self._scene.root)
+        polys = all_polygons(group)
+
+        poly_indices  = set()
+        locked_groups = set()
+
+        for p in polys:
+            if p not in flat:
+                continue
+            if not is_locked(p):
+                poly_indices.add(flat.index(p))
+            else:
+                # Find the topmost locked ancestor within the target group
+                topmost_locked = None
+                node = p.group
+                while node is not None and node is not group:
+                    if node.locked:
+                        topmost_locked = node
+                    node = node.parent
+                if topmost_locked is not None:
+                    locked_groups.add(topmost_locked)
+
+        if not poly_indices and not locked_groups:
             return
-        self._scene.selected_indices = indices  # → StateManager → selection_changed → sync_selection()
+
+        if self._state is not None:
+            self._state.selected_groups = list(locked_groups)
+        self._scene.selected_indices = poly_indices  # → StateManager → selection_changed → sync_selection()
 
     def _set_group_hidden(self, group: Group, hidden: bool):
         """Hides or shows a group and refreshes the display."""
