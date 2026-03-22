@@ -1,20 +1,28 @@
 """Scene class: polygons, UVs, texture, atlas, selection."""
 
 import copy
+import ctypes
 import json
 import math
 import tkinter as tk
+import numpy as np
 from PIL import Image, ImageTk
 from OpenGL.GL import (
     glGenTextures, glDeleteTextures, glBindTexture, glTexImage2D, glTexParameteri,
-    glEnable, glDisable, glCullFace, glFrontFace, glBegin, glEnd,
-    glColor3f, glColor4f, glTexCoord2f, glVertex3f, glLineWidth, glPointSize,
-    glBlendFunc,
+    glEnable, glDisable, glCullFace, glFrontFace, glLineWidth, glPointSize,
+    glColor3f, glColor4f, glBlendFunc,
+    glGenBuffers, glDeleteBuffers, glBindBuffer, glBufferData,
+    glEnableClientState, glDisableClientState,
+    glVertexPointer, glTexCoordPointer,
+    glDrawArrays,
     GL_TEXTURE_2D, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR,
     GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
-    GL_CULL_FACE, GL_BACK, GL_CW, GL_TRIANGLE_FAN, GL_LINES, GL_POINTS,
+    GL_CULL_FACE, GL_BACK, GL_CW,
     GL_BLEND, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
     GL_DEPTH_TEST,
+    GL_ARRAY_BUFFER, GL_DYNAMIC_DRAW, GL_FLOAT,
+    GL_VERTEX_ARRAY, GL_TEXTURE_COORD_ARRAY,
+    GL_TRIANGLES, GL_LINES, GL_POINTS,
 )
 
 from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
@@ -89,6 +97,23 @@ class Scene:
 
         self.tex_preview_win = None
         self.tex_preview_sz  = 0
+
+        # ── VBO state ──────────────────────────────────────────────────────────
+        self._vbo_dirty    = True   # rebuild VBOs on next draw
+        self._subscribed   = False  # lazy subscription to state events
+
+        # Face VBOs: atlas_id -> (vbo_id, vertex_count)  (fan-triangulated)
+        self._face_vbos: dict = {}
+
+        # Outline VBOs: (vbo_id, vertex_count) or None
+        self._vbo_root   = None   # orange — root-level polygons
+        self._vbo_group  = None   # blue   — grouped polygons
+        self._vbo_sel    = None   # red    — selected polygon outlines
+        self._vbo_locked = None   # red    — polygons in a selected locked group
+
+        # Selection-detail VBOs
+        self._vbo_sel_edges = None   # thick blue
+        self._vbo_sel_verts = None   # green points
 
     # ── Compatibility properties (delegate to StateManager) ──────────────────
 
@@ -521,141 +546,209 @@ class Scene:
         py = int(event_pos[1] * self.atlas_h / self.tex_preview_sz)
         self.assign_uv_at_atlas_pixel(px, py)
 
-    # ── Rendering ─────────────────────────────────────────────────────────────
-    def draw(self):
-        sel_poly_ids = {id(p) for p in (self._state.selected_polygons if self._state else [])}
-        sel_edges    = self._state.selected_edges if self._state else []
-        sel_verts    = self._state.selected_vertices if self._state else []
-        sel_group_ids = {id(g) for g in (self._state.selected_groups if self._state else [])}
+    # ── VBO helpers ───────────────────────────────────────────────────────────
+    def _mark_dirty(self, **_kw):
+        self._vbo_dirty = True
 
-        edge_poly_ids = {id(p) for p, _ in sel_edges}
-        vert_poly_ids = {id(p) for p, _ in sel_verts}
-        needed_ids    = edge_poly_ids | vert_poly_ids
-        poly_verts_by_id = {}
+    def _upload_vbo(self, data_list, existing_vbo, floats_per_vertex):
+        """Upload a flat float list to a VBO. Returns (vbo_id, count) or None."""
+        if not data_list:
+            if existing_vbo is not None:
+                glDeleteBuffers(1, [existing_vbo[0]])
+            return None
+        data   = np.array(data_list, dtype=np.float32)
+        count  = len(data_list) // floats_per_vertex
+        vbo_id = existing_vbo[0] if existing_vbo is not None else glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo_id)
+        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
+        return (vbo_id, count)
 
-        # Outline buckets for batched rendering (GL_LINES instead of N×GL_LINE_LOOP)
-        root_outline_verts        = []   # orange — root-level polygons
-        group_outline_verts       = []   # blue   — grouped polygons
-        selected_polys_verts      = []   # red    — selected polygons
-        locked_group_outline_verts = []  # red    — polygons in a selected locked group
-
-        # ── Face pass (sorted by texture to minimise glBindTexture calls) ───
+    def _rebuild_vbos(self, sel_poly_ids, sel_edges, sel_verts, sel_group_ids):
+        """Rebuild every VBO from the current scene state."""
         visible = [p for p in iter_polygons(self.root) if is_visible(p)]
         visible.sort(key=lambda p: p.texture_atlas_id or '')
 
-        glEnable(GL_CULL_FACE);  glCullFace(GL_BACK);  glFrontFace(GL_CW)
-        glEnable(GL_TEXTURE_2D);  glColor3f(1.0, 1.0, 1.0)
-        current_tex = -1
+        # Collect poly refs needed for edge/vertex detail passes
+        needed_ids       = {id(p) for p, _ in sel_edges} | {id(p) for p, _ in sel_verts}
+        poly_verts_by_id = {}
+
+        # Outline buckets (list of vertex lists, one per polygon)
+        root_polys   = []
+        group_polys  = []
+        sel_polys    = []
+        locked_polys = []
+
+        # Face data per texture: atlas_id -> flat [x,y,z,u,v, …] (triangulated)
+        polys_by_tex: dict = {}
+
         for poly_obj in visible:
-            poly = poly_obj.vertices
-            uvs  = poly_obj.uvs
+            v, uvs = poly_obj.vertices, poly_obj.uvs
+            n      = len(v)
             if id(poly_obj) in needed_ids:
-                poly_verts_by_id[id(poly_obj)] = poly
+                poly_verts_by_id[id(poly_obj)] = v
 
-            # Bind texture only when it changes
-            tex_id = self.poly_textures.get(poly_obj.texture_atlas_id, self.poly_texture)
-            if tex_id != current_tex:
-                glBindTexture(GL_TEXTURE_2D, tex_id)
-                current_tex = tex_id
+            # Fan-triangulate into flat interleaved array
+            atlas_id = poly_obj.texture_atlas_id or None
+            face_buf = polys_by_tex.setdefault(atlas_id, [])
+            for i in range(n - 2):
+                for idx in (0, i + 1, i + 2):
+                    face_buf += [v[idx][0], v[idx][1], v[idx][2], uvs[idx][0], uvs[idx][1]]
 
-            glBegin(GL_TRIANGLE_FAN)
-            for (vx, vy, vz), (u, v) in zip(poly, uvs):
-                glTexCoord2f(u, v);  glVertex3f(vx, vy, vz)
-            glEnd()
-
-            # Collect outline vertices into buckets
-            in_selected_group = sel_group_ids and any(
+            # Outline bucket assignment
+            in_locked_group = sel_group_ids and any(
                 id(node) in sel_group_ids and getattr(node, 'locked', False)
                 for node in iter_ancestors(poly_obj)
             )
             if id(poly_obj) in sel_poly_ids:
-                selected_polys_verts.append(poly)
-            elif in_selected_group:
-                locked_group_outline_verts.append(poly)
+                sel_polys.append(v)
+            elif in_locked_group:
+                locked_polys.append(v)
             elif poly_obj.group is not self.root:
-                group_outline_verts.append(poly)
+                group_polys.append(v)
             else:
-                root_outline_verts.append(poly)
+                root_polys.append(v)
 
+        # ── Upload face VBOs (reuse existing buffer objects where possible) ──
+        for atlas_id in list(self._face_vbos):
+            if atlas_id not in polys_by_tex:
+                glDeleteBuffers(1, [self._face_vbos.pop(atlas_id)[0]])
+
+        for atlas_id, face_data in polys_by_tex.items():
+            existing = self._face_vbos.get(atlas_id)
+            result   = self._upload_vbo(face_data, existing, 5)
+            if result is not None:
+                self._face_vbos[atlas_id] = result
+            elif atlas_id in self._face_vbos:
+                del self._face_vbos[atlas_id]
+
+        # ── Upload outline VBOs ───────────────────────────────────────────────
+        def edge_data(bucket):
+            buf = []
+            for poly in bucket:
+                n = len(poly)
+                for i in range(n):
+                    v0, v1 = poly[i], poly[(i + 1) % n]
+                    buf += [v0[0], v0[1], v0[2], v1[0], v1[1], v1[2]]
+            return buf
+
+        self._vbo_root   = self._upload_vbo(edge_data(root_polys),   self._vbo_root,   3)
+        self._vbo_group  = self._upload_vbo(edge_data(group_polys),  self._vbo_group,  3)
+        self._vbo_sel    = self._upload_vbo(edge_data(sel_polys),    self._vbo_sel,    3)
+        self._vbo_locked = self._upload_vbo(edge_data(locked_polys), self._vbo_locked, 3)
+
+        # ── Upload selection-detail VBOs ──────────────────────────────────────
+        edge_buf = []
+        for poly_ref, edge_idx in sel_edges:
+            p = poly_verts_by_id.get(id(poly_ref))
+            if p is not None:
+                v0, v1 = p[edge_idx], p[(edge_idx + 1) % len(p)]
+                edge_buf += [v0[0], v0[1], v0[2], v1[0], v1[1], v1[2]]
+        self._vbo_sel_edges = self._upload_vbo(edge_buf, self._vbo_sel_edges, 3)
+
+        vert_buf = []
+        for poly_ref, vert_idx in sel_verts:
+            p = poly_verts_by_id.get(id(poly_ref))
+            if p is not None and vert_idx < len(p):
+                v0 = p[vert_idx]
+                vert_buf += [v0[0], v0[1], v0[2]]
+        self._vbo_sel_verts = self._upload_vbo(vert_buf, self._vbo_sel_verts, 3)
+
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+        self._vbo_dirty = False
+
+    def _draw_lines_vbo(self, vbo_tuple, color4):
+        """Draw a lines VBO with a given RGBA colour. Caller manages line width."""
+        if vbo_tuple is None:
+            return
+        vbo_id, count = vbo_tuple
+        glColor4f(*color4)
+        glEnableClientState(GL_VERTEX_ARRAY)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo_id)
+        glVertexPointer(3, GL_FLOAT, 0, None)
+        glDrawArrays(GL_LINES, 0, count)
+        glDisableClientState(GL_VERTEX_ARRAY)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+    # ── Rendering ─────────────────────────────────────────────────────────────
+    def draw(self):
+        # Lazy subscription to state events (first draw after state is injected)
+        if self._state is not None and not self._subscribed:
+            self._state.subscribe("scene_changed",      self._mark_dirty)
+            self._state.subscribe("polygon_transformed", self._mark_dirty)
+            self._state.subscribe("selection_changed",   self._mark_dirty)
+            self._subscribed = True
+
+        sel_poly_ids  = {id(p) for p in (self._state.selected_polygons if self._state else [])}
+        sel_edges     = self._state.selected_edges    if self._state else []
+        sel_verts     = self._state.selected_vertices if self._state else []
+        sel_group_ids = {id(g) for g in (self._state.selected_groups  if self._state else [])}
+
+        if self._vbo_dirty:
+            self._rebuild_vbos(sel_poly_ids, sel_edges, sel_verts, sel_group_ids)
+
+        # ── Face pass — one glDrawArrays per texture atlas ───────────────────
+        glEnable(GL_CULL_FACE);  glCullFace(GL_BACK);  glFrontFace(GL_CW)
+        glEnable(GL_TEXTURE_2D);  glColor3f(1.0, 1.0, 1.0)
+        glEnableClientState(GL_VERTEX_ARRAY)
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY)
+
+        stride = 5 * 4   # 5 floats × 4 bytes (x,y,z,u,v interleaved)
+        for atlas_id, (vbo_id, count) in self._face_vbos.items():
+            tex_id = self.poly_textures.get(atlas_id, self.poly_texture)
+            glBindTexture(GL_TEXTURE_2D, tex_id)
+            glBindBuffer(GL_ARRAY_BUFFER, vbo_id)
+            glVertexPointer(3, GL_FLOAT, stride, ctypes.c_void_p(0))
+            glTexCoordPointer(2, GL_FLOAT, stride, ctypes.c_void_p(12))
+            glDrawArrays(GL_TRIANGLES, 0, count)
+
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY)
+        glDisableClientState(GL_VERTEX_ARRAY)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
         glDisable(GL_TEXTURE_2D)
         glDisable(GL_CULL_FACE)
 
-        # ── Outline pass — 2 batched GL_LINES calls instead of N×GL_LINE_LOOP ──
-        if root_outline_verts or group_outline_verts:
+        # ── Outline pass — VBO draw calls, one per colour bucket ─────────────
+        if self._vbo_root or self._vbo_group:
             glLineWidth(1.5)
             glEnable(GL_BLEND);  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-            if root_outline_verts:
-                glColor4f(1.0, 0.75, 0.35, 0.5)
-                glBegin(GL_LINES)
-                for poly in root_outline_verts:
-                    n = len(poly)
-                    for i in range(n):
-                        glVertex3f(*poly[i]);  glVertex3f(*poly[(i + 1) % n])
-                glEnd()
-            if group_outline_verts:
-                glColor4f(0.2, 0.7, 1.0, 0.5)
-                glBegin(GL_LINES)
-                for poly in group_outline_verts:
-                    n = len(poly)
-                    for i in range(n):
-                        glVertex3f(*poly[i]);  glVertex3f(*poly[(i + 1) % n])
-                glEnd()
+            self._draw_lines_vbo(self._vbo_root,  (1.0, 0.75, 0.35, 0.5))
+            self._draw_lines_vbo(self._vbo_group, (0.2, 0.7,  1.0,  0.5))
             glDisable(GL_BLEND)
             glLineWidth(1.0)
 
-        # ── Locked-group outlines — red edges for polygons in a selected locked group ──
-        if locked_group_outline_verts:
+        if self._vbo_locked:
             glDisable(GL_DEPTH_TEST)
             glLineWidth(2.5)
-            glColor4f(1.0, 0.15, 0.15, 0.9)
-            glBegin(GL_LINES)
-            for poly in locked_group_outline_verts:
-                n = len(poly)
-                for i in range(n):
-                    glVertex3f(*poly[i]);  glVertex3f(*poly[(i + 1) % n])
-            glEnd()
+            self._draw_lines_vbo(self._vbo_locked, (1.0, 0.15, 0.15, 0.9))
             glLineWidth(1.0)
             glEnable(GL_DEPTH_TEST)
 
-        # ── Selection outlines — 1 batched call, no depth test ───────────────
-        if selected_polys_verts:
+        if self._vbo_sel:
             glDisable(GL_DEPTH_TEST)
             glLineWidth(2.5)
-            glColor4f(1.0, 0.15, 0.15, 1.0)
-            glBegin(GL_LINES)
-            for poly in selected_polys_verts:
-                n = len(poly)
-                for i in range(n):
-                    glVertex3f(*poly[i]);  glVertex3f(*poly[(i + 1) % n])
-            glEnd()
+            self._draw_lines_vbo(self._vbo_sel, (1.0, 0.15, 0.15, 1.0))
             glLineWidth(1.0)
             glEnable(GL_DEPTH_TEST)
 
-        # ── Selected edges (already batched) ─────────────────────────────────
-        if sel_edges:
+        # ── Selected edges ────────────────────────────────────────────────────
+        if self._vbo_sel_edges:
             glDisable(GL_DEPTH_TEST)
             glLineWidth(4.0)
-            glColor3f(0.05, 0.05, 1.0)
-            glBegin(GL_LINES)
-            for poly_ref, edge_idx in sel_edges:
-                p = poly_verts_by_id.get(id(poly_ref))
-                if p is not None:
-                    glVertex3f(*p[edge_idx])
-                    glVertex3f(*p[(edge_idx + 1) % len(p)])
-            glEnd()
+            self._draw_lines_vbo(self._vbo_sel_edges, (0.05, 0.05, 1.0, 1.0))
             glLineWidth(1.0)
             glEnable(GL_DEPTH_TEST)
 
-        # ── Selected vertices (already batched) ───────────────────────────────
-        if sel_verts:
+        # ── Selected vertices ─────────────────────────────────────────────────
+        if self._vbo_sel_verts:
+            vbo_id, count = self._vbo_sel_verts
             glDisable(GL_DEPTH_TEST)
             glPointSize(8.0)
             glColor3f(0.05, 1.0, 0.3)
-            glBegin(GL_POINTS)
-            for poly_ref, vert_idx in sel_verts:
-                p = poly_verts_by_id.get(id(poly_ref))
-                if p is not None and vert_idx < len(p):
-                    glVertex3f(*p[vert_idx])
-            glEnd()
+            glEnableClientState(GL_VERTEX_ARRAY)
+            glBindBuffer(GL_ARRAY_BUFFER, vbo_id)
+            glVertexPointer(3, GL_FLOAT, 0, None)
+            glDrawArrays(GL_POINTS, 0, count)
+            glDisableClientState(GL_VERTEX_ARRAY)
+            glBindBuffer(GL_ARRAY_BUFFER, 0)
             glPointSize(1.0)
             glEnable(GL_DEPTH_TEST)
