@@ -258,6 +258,42 @@ class Scene:
             self._state.set_selection(polygons=new_polys)
         self._emit_scene_changed("polygon_added")
 
+    def duplicate_selected_groups(self):
+        """Duplicates selected groups and returns the new groups."""
+        groups = self._state.selected_groups if self._state else []
+        if not groups:
+            return []
+        # Skip groups whose ancestor is also selected (avoid double-duplication)
+        group_ids = {id(g) for g in groups}
+        def has_selected_ancestor(g):
+            node = g.parent
+            while node is not None:
+                if id(node) in group_ids:
+                    return True
+                node = node.parent
+            return False
+        top_groups = [g for g in groups if not has_selected_ancestor(g)]
+        new_groups = []
+        for group in top_groups:
+            clone = self._clone_group(group, group.parent)
+            new_groups.append(clone)
+        if self._state is not None:
+            self._state.selected_groups = new_groups
+        self._emit_scene_changed("group_added")
+        return new_groups
+
+    def _clone_group(self, group, parent):
+        """Recursively clones a group into the given parent."""
+        clone = parent.add_group(group.name + " copy")
+        clone.hidden = group.hidden
+        clone.locked = group.locked
+        for poly in group.polygons:
+            new_poly = clone.add_polygon(copy.deepcopy(poly.vertices), list(poly.uvs))
+            new_poly.texture_atlas_id = poly.texture_atlas_id
+        for child in group.children:
+            self._clone_group(child, clone)
+        return clone
+
     # ── Selection ─────────────────────────────────────────────────────────────
     def selection_center(self):
         """Centroid of all selected polygons."""

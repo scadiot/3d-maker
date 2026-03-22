@@ -37,7 +37,8 @@ from editor.state_manager import StateManager
 from editor.history       import (HistoryManager, AddPolygonsCommand,
                                    DeletePolygonsCommand, PolyDataCommand,
                                    GroupCommand, UngroupCommand,
-                                   ExtrudeEdgesCommand)
+                                   ExtrudeEdgesCommand, AddGroupCommand,
+                                   CompoundCommand)
 from editor.group         import Group, Polygon, all_polygons
 from editor.math3d        import (normalize, cross, vsub, vadd, vscale, dot,
                                   vlength, ray_plane_intersect,
@@ -925,9 +926,17 @@ class App:
         self._record_added_polygons(before_ids)
 
     def _cmd_duplicate(self) -> None:
-        before_ids = {id(p) for p in all_polygons(self.scene.root)}
-        self.scene.duplicate_selected()
-        self._record_added_polygons(before_ids)
+        if self.state.selected_groups:
+            new_groups = self.scene.duplicate_selected_groups()
+            if not new_groups:
+                return
+            cmds = [AddGroupCommand(self.state, g, g.parent) for g in new_groups]
+            cmd = cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
+            self.history.record(cmd)
+        else:
+            before_ids = {id(p) for p in all_polygons(self.scene.root)}
+            self.scene.duplicate_selected()
+            self._record_added_polygons(before_ids)
 
     def _cmd_delete(self) -> None:
         polys = self.state.selected_polygons
