@@ -637,6 +637,10 @@ class GroupPanel(tk.Frame):
             menu.add_command(label='Select all',
                              command=lambda: self._select_all_in_group(clicked_obj))
             menu.add_separator()
+            if not getattr(clicked_obj, 'locked', False):
+                menu.add_command(label='Duplicate',
+                                 command=lambda: self._duplicate_group(clicked_obj))
+                menu.add_separator()
             menu.add_command(label='Hide',
                              command=lambda: self._set_group_hidden(clicked_obj, True))
             menu.add_command(label='Show',
@@ -866,6 +870,13 @@ class GroupPanel(tk.Frame):
         self.refresh()
         if self._state is not None:
             self._state.notify('scene_changed', change_type='visibility')
+
+    def _duplicate_group(self, group: Group):
+        """Duplicates a group via the app's duplicate command."""
+        if self._state is not None:
+            self._state.selected_groups = [group]
+            self._state.set_selection(polygons=[], edges=[], vertices=[])
+        self._app._cmd_duplicate()
 
     def _set_group_locked(self, group: Group, locked: bool):
         """Locks or unlocks a group and refreshes the display."""

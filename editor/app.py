@@ -1563,7 +1563,7 @@ class App:
         self.view_cube.update(self.camera, dt)
         self._update_statusbar()
 
-        self.root.after(32, self._update_loop)
+        self.root.after(16, self._update_loop)
 
     # ── Rendering ─────────────────────────────────────────────────────────────
     def _render(self):
