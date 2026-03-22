@@ -455,8 +455,9 @@ class GroupPanel(tk.Frame):
             return
         flat           = all_polygons(self._scene.root)
         selected_polys = {flat[i] for i in indices if i < len(flat)}
+        selected_grps  = set(self._state.selected_groups) if self._state is not None else set()
         iids = [iid for iid, obj in self._iid_to_obj.items()
-                if obj in selected_polys]
+                if obj in selected_polys or obj in selected_grps]
         self._syncing = True
         self._tree.selection_set(iids)
         if iids:
@@ -466,14 +467,30 @@ class GroupPanel(tk.Frame):
     def _on_select(self, _event):
         if self._syncing:
             return
-        sel = self._tree.selection()
+        sel = set(self._tree.selection())
         if not sel:
             return
 
-        # Collect all selected groups
+        # If the treeview selection exactly matches the current state, the event
+        # was triggered programmatically by sync_selection — nothing to update.
+        if self._state is not None:
+            state_poly_iids  = {iid for iid, obj in self._iid_to_obj.items()
+                                if isinstance(obj, Polygon)
+                                and obj in set(self._state.selected_polygons)}
+            state_group_iids = {iid for iid, obj in self._iid_to_obj.items()
+                                if isinstance(obj, Group)
+                                and obj in set(self._state.selected_groups)}
+            if sel == state_poly_iids | state_group_iids:
+                return
+
+        # Collect groups and polygons from the new selection
         selected_groups = [self._iid_to_obj[iid] for iid in sel
                            if isinstance(self._iid_to_obj.get(iid), Group)]
-        if selected_groups:
+        poly_iids = [iid for iid in sel
+                     if isinstance(self._iid_to_obj.get(iid), Polygon)]
+
+        # Pure group selection (no polygons in the treeview selection)
+        if selected_groups and not poly_iids:
             if self._state is not None:
                 self._state.set_current_group(selected_groups[0])
                 self._state.selected_groups = selected_groups
@@ -482,9 +499,10 @@ class GroupPanel(tk.Frame):
                 self._app.current_group = selected_groups[0]
             return
 
+        # Polygon selection (possibly alongside groups in the treeview)
         flat    = all_polygons(self._scene.root)
         indices = set()
-        for iid in sel:
+        for iid in poly_iids:
             obj = self._iid_to_obj.get(iid)
             if not isinstance(obj, Polygon):
                 continue
