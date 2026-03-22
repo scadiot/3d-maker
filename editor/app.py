@@ -417,9 +417,10 @@ class App:
         add_btn(make_icon(ico_new),          self._new_project,       "New project (Ctrl+N)")
         add_sep()
         add_btn(make_icon(ico_load),         self._load_json_dialog,  "Open")
-        add_btn(make_icon(ico_import),       self._import_json_dialog, "Import")
-        add_btn(make_icon(ico_save),         self._save_json_dialog,  "Save as…")
         add_btn(make_icon(ico_save_current), self._save_json,         "Save (Ctrl+S)")
+        add_btn(make_icon(ico_save),         self._save_json_dialog,  "Save as…")
+        add_sep()
+        add_btn(make_icon(ico_import),       self._import_json_dialog, "Import")
         add_sep()
         add_btn(make_icon(ico_polygon),
                 self._cmd_add_polygon,
