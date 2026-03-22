@@ -12,6 +12,8 @@ def save_json(scene, path: str) -> None:
     def serialize_group(g):
         return {
             "name":     g.name,
+            "hidden":   g.hidden,
+            "locked":   g.locked,
             "groups":   [serialize_group(c) for c in g.children],
             "polygons": [
                 {
@@ -85,6 +87,8 @@ def import_json(scene, path: str) -> None:
             poly.texture_atlas_id = id_map.get(old_id, old_id) if state is not None else old_id
         for g_data in node_data.get("groups", []):
             child = parent.add_group(g_data.get("name", "Group"))
+            child.hidden = g_data.get("hidden", False)
+            child.locked = g_data.get("locked", False)
             load_group(g_data, child)
 
     import_name = data.get("name") or "Import"
@@ -107,6 +111,8 @@ def load_json(scene, path: str) -> None:
             poly.texture_atlas_id = p_data.get("texture_atlas_id", 0)
         for g_data in node_data.get("groups", []):
             child = parent.add_group(g_data.get("name", "Group"))
+            child.hidden = g_data.get("hidden", False)
+            child.locked = g_data.get("locked", False)
             load_group(g_data, child)
         # Backward compatibility: old format with mixed "children"
         for child_data in node_data.get("children", []):
