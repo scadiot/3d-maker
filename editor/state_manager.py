@@ -85,7 +85,17 @@ class StateManager:
 
     @selected_groups.setter
     def selected_groups(self, value: list[Group]) -> None:
-        self._selected_groups = list(value)
+        new = list(value)
+        if new == self._selected_groups:
+            return
+        self._selected_groups = new
+        self._emit(
+            "selection_changed",
+            polygons=self.selected_polygons,
+            edges=self.selected_edges,
+            vertices=self.selected_vertices,
+            mode=self._selection_mode,
+        )
 
     @property
     def textures_atlases(self) -> list[TextureAtlas]:
