@@ -1362,6 +1362,10 @@ class App:
         self.state._project_path = ""
         self.state._project_name = ""
         self.state._modified = False
+        # Reset camera
+        self.camera.pos   = [0.0, 3.0, 8.0]
+        self.camera.yaw   = 0.0
+        self.camera.pitch = -20.0
         # Reset history and gizmo
         self.history.clear()
         self.gizmo.stop_drag()
