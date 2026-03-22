@@ -790,6 +790,17 @@ class GroupPanel(tk.Frame):
     def _set_group_locked(self, group: Group, locked: bool):
         """Locks or unlocks a group and refreshes the display."""
         group.locked = locked
+        if locked and self._state is not None:
+            # If current_group is the locked group or a descendant, move up to parent
+            node = self._state.current_group
+            is_inside = False
+            while node is not None:
+                if node is group:
+                    is_inside = True
+                    break
+                node = node.parent
+            if is_inside and group.parent is not None:
+                self._state.set_current_group(group.parent)
         self.refresh()
         if self._state is not None:
             self._state.notify('scene_changed', change_type='lock')
