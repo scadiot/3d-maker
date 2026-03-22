@@ -1278,7 +1278,7 @@ class App:
             elif sel_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
-                self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
+                self._handle_polygon_click(mx, my, ctrl_held)
 
         elif self.gizmo.mode == 'rotate':
             axis = self.gizmo.pick_rotate_axis(mx, my, self.state, self.camera) if gizmo_on else None
@@ -1287,7 +1287,7 @@ class App:
             elif sel_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
-                self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
+                self._handle_polygon_click(mx, my, ctrl_held)
 
         else:  # scale
             handle = self.gizmo.pick_scale_handle(mx, my, self.state, self.camera) if gizmo_on else None
@@ -1296,7 +1296,7 @@ class App:
             elif sel_mode == 'edge':
                 self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
             else:
-                self._apply_selection(self._pick_polygon(mx, my), ctrl_held)
+                self._handle_polygon_click(mx, my, ctrl_held)
 
     def _cmd_project_info(self):
         from editor.project_info_dialog import ProjectInfoDialog
@@ -1409,6 +1409,35 @@ class App:
 
     def _pick_vertex(self, mx, my):
         return self.scene.pick_vertex(tuple(self.camera.pos), self.camera.screen_ray(mx, my))
+
+    def _pick_locked_group(self, mx, my):
+        return self.scene.pick_locked_group(tuple(self.camera.pos), self.camera.screen_ray(mx, my))
+
+    def _apply_locked_group_selection(self, group, shift_held):
+        current = list(self.state.selected_groups)
+        if shift_held:
+            if group in current:
+                current.remove(group)
+            else:
+                current.append(group)
+        else:
+            current = [group]
+        self.state.selected_groups = current
+
+    def _handle_polygon_click(self, mx, my, shift_held):
+        idx = self._pick_polygon(mx, my)
+        if idx >= 0:
+            if not shift_held:
+                self.state.selected_groups = []
+            self._apply_selection(idx, shift_held)
+        else:
+            group = self._pick_locked_group(mx, my)
+            if group is not None:
+                self._apply_locked_group_selection(group, shift_held)
+            else:
+                if not shift_held:
+                    self.state.selected_groups = []
+                self._apply_selection(-1, shift_held)
 
     def _apply_vertex_selection(self, vertex, ctrl_held):
         if not self.state.selection_enable:

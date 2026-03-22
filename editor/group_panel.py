@@ -470,13 +470,16 @@ class GroupPanel(tk.Frame):
         if not sel:
             return
 
-        # If a group is selected, it becomes the current_group
-        first_obj = self._iid_to_obj.get(sel[0])
-        if isinstance(first_obj, Group):
+        # Collect all selected groups
+        selected_groups = [self._iid_to_obj[iid] for iid in sel
+                           if isinstance(self._iid_to_obj.get(iid), Group)]
+        if selected_groups:
             if self._state is not None:
-                self._state.set_current_group(first_obj)
+                self._state.set_current_group(selected_groups[0])
+                self._state.selected_groups = selected_groups
+                self._state.set_selection(polygons=[], edges=[], vertices=[])
             else:
-                self._app.current_group = first_obj
+                self._app.current_group = selected_groups[0]
             return
 
         flat    = all_polygons(self._scene.root)
@@ -491,6 +494,8 @@ class GroupPanel(tk.Frame):
                 pass
         if not indices:
             return
+        if self._state is not None:
+            self._state.selected_groups = []
         self._scene.selected_indices = indices
         self._scene.selected_idx     = max(indices)
 

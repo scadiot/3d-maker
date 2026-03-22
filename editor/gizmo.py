@@ -177,7 +177,7 @@ class Gizmo:
         if state.selected_vertices:
             self._draw_translate(self._snap_pos(self._vertex_center(state)), camera, self.dragging_axis)
             return
-        polys = state.selected_polygons
+        polys = self._effective_polys(state)
         if not polys:
             return
         if len(polys) > 1:
@@ -242,10 +242,11 @@ class Gizmo:
             center = self._snap_pos(self._edge_center(state))
         elif state.selected_vertices:
             center = self._snap_pos(self._vertex_center(state))
-        elif state.selected_polygons:
-            center = self._snap_pos(_polys_center(state.selected_polygons))
         else:
-            return None
+            polys = self._effective_polys(state)
+            if not polys:
+                return None
+            center = self._snap_pos(_polys_center(polys))
         scale  = self._gizmo_scale(center, camera)
         # Plane squares take priority over axis arrows
         offset = scale * 0.18
@@ -274,7 +275,7 @@ class Gizmo:
         return best
 
     def pick_rotate_axis(self, mx, my, state, camera):
-        polys = state.selected_polygons
+        polys = self._effective_polys(state)
         if not polys: return None
         center = self._snap_pos(_polys_center(polys))
         scale  = self._gizmo_scale(center, camera)
@@ -380,6 +381,23 @@ class Gizmo:
                         break
         return result
 
+    @staticmethod
+    def _effective_polys(state):
+        """Return selected polygons + all polygons from selected groups (deduplicated)."""
+        from editor.group import all_polygons as _all_polys
+        seen = set()
+        result = []
+        for p in state.selected_polygons:
+            if id(p) not in seen:
+                seen.add(id(p))
+                result.append(p)
+        for g in state.selected_groups:
+            for p in _all_polys(g):
+                if id(p) not in seen:
+                    seen.add(id(p))
+                    result.append(p)
+        return result
+
     # ── Translate drag ────────────────────────────────────────────────────────
     def _start_translate_drag(self, axis, mx, my, state, camera):
         self.dragging_axis = axis
@@ -412,7 +430,7 @@ class Gizmo:
         else:
             self.drag_start_edge_verts   = {}
             self.drag_start_vertex_verts = {}
-            polys = state.selected_polygons
+            polys = self._effective_polys(state)
             self.drag_start_verts_all = {p: list(p.vertices) for p in polys}
             cs = [math3d.poly_center(v) for v in self.drag_start_verts_all.values()]
             raw_center = (sum(c[0] for c in cs)/len(cs), sum(c[1] for c in cs)/len(cs),
@@ -512,7 +530,7 @@ class Gizmo:
     # ── Rotate drag ───────────────────────────────────────────────────────────
     def _start_rotate_drag(self, axis, mx, my, state, camera):
         self.dragging_axis        = axis
-        polys = state.selected_polygons
+        polys = self._effective_polys(state)
         self.drag_start_verts_all = {p: list(p.vertices) for p in polys}
         self.drag_before_snapshot = {p: list(vs)
                                      for p, vs in self.drag_start_verts_all.items()}

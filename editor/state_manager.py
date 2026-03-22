@@ -38,6 +38,7 @@ class StateManager:
         self._selected_polygons: list[Polygon] = []
         self._selected_edges: list[tuple[Polygon, int]] = []
         self._selected_vertices: list[tuple[Polygon, int]] = []
+        self._selected_groups: list[Group] = []
         self._listeners: dict[str, list[Callable]] = defaultdict(list)
         self._emitting: bool = False  # guard against notification loops
         self._modified: bool = False  # True as soon as an unsaved change exists
@@ -77,6 +78,14 @@ class StateManager:
     @property
     def selected_vertices(self) -> list[tuple[Polygon, int]]:
         return list(self._selected_vertices)
+
+    @property
+    def selected_groups(self) -> list[Group]:
+        return list(self._selected_groups)
+
+    @selected_groups.setter
+    def selected_groups(self, value: list[Group]) -> None:
+        self._selected_groups = list(value)
 
     @property
     def textures_atlases(self) -> list[TextureAtlas]:
@@ -298,6 +307,7 @@ class StateManager:
         if mode == self._selection_mode:
             return
         self._selection_mode = mode
+        self._selected_groups = []
         # Clear selections incompatible with the new mode
         if mode == "polygon":
             self._selected_edges = []

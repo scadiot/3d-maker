@@ -20,7 +20,7 @@ from OpenGL.GL import (
 from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
 from editor.texture_atlas import TextureAtlas
 from editor import math3d, serializer
-from editor.group import Group, all_polygons, iter_polygons, is_visible
+from editor.group import Group, all_polygons, iter_polygons, is_visible, is_locked, iter_ancestors
 
 
 # ── Flat views (compatibility with gizmo.py and the rest) ─────────────────────
@@ -273,19 +273,38 @@ class Scene:
         """Returns the index of the closest polygon under the ray, or -1."""
         best_t, best_i = float('inf'), -1
         for i, poly_obj in enumerate(all_polygons(self.root)):
-            if not is_visible(poly_obj):
+            if not is_visible(poly_obj) or is_locked(poly_obj):
                 continue
             t = math3d.ray_poly_intersect(ray_o, ray_d, poly_obj.vertices)
             if t is not None and t < best_t:
                 best_t, best_i = t, i
         return best_i
 
+    def pick_locked_group(self, ray_o, ray_d):
+        """Returns the topmost locked ancestor Group of the closest locked polygon under the ray, or None."""
+        best_t, best_poly = float('inf'), None
+        for poly_obj in all_polygons(self.root):
+            if not is_visible(poly_obj) or not is_locked(poly_obj):
+                continue
+            t = math3d.ray_poly_intersect(ray_o, ray_d, poly_obj.vertices)
+            if t is not None and t < best_t:
+                best_t, best_poly = t, poly_obj
+        if best_poly is None:
+            return None
+        topmost_locked = None
+        node = best_poly.group
+        while node is not None:
+            if node.locked:
+                topmost_locked = node
+            node = node.parent
+        return topmost_locked
+
     def pick_edge(self, ray_o, ray_d):
         """Returns (poly_idx, edge_idx) of the closest edge to the click, or None."""
         best_t, best_poly = float('inf'), -1
         flat = all_polygons(self.root)
         for i, poly_obj in enumerate(flat):
-            if not is_visible(poly_obj):
+            if not is_visible(poly_obj) or is_locked(poly_obj):
                 continue
             t = math3d.ray_poly_intersect(ray_o, ray_d, poly_obj.vertices)
             if t is not None and t < best_t:
@@ -310,7 +329,7 @@ class Scene:
         best_t, best_poly = float('inf'), -1
         flat = all_polygons(self.root)
         for i, poly_obj in enumerate(flat):
-            if not is_visible(poly_obj):
+            if not is_visible(poly_obj) or is_locked(poly_obj):
                 continue
             t = math3d.ray_poly_intersect(ray_o, ray_d, poly_obj.vertices)
             if t is not None and t < best_t:
@@ -471,6 +490,7 @@ class Scene:
         sel_poly_ids = {id(p) for p in (self._state.selected_polygons if self._state else [])}
         sel_edges    = self._state.selected_edges if self._state else []
         sel_verts    = self._state.selected_vertices if self._state else []
+        sel_group_ids = {id(g) for g in (self._state.selected_groups if self._state else [])}
 
         edge_poly_ids = {id(p) for p, _ in sel_edges}
         vert_poly_ids = {id(p) for p, _ in sel_verts}
@@ -478,9 +498,10 @@ class Scene:
         poly_verts_by_id = {}
 
         # Outline buckets for batched rendering (GL_LINES instead of N×GL_LINE_LOOP)
-        root_outline_verts  = []   # orange — root-level polygons
-        group_outline_verts = []   # blue   — grouped polygons
-        selected_polys_verts = []  # red    — selected polygons
+        root_outline_verts        = []   # orange — root-level polygons
+        group_outline_verts       = []   # blue   — grouped polygons
+        selected_polys_verts      = []   # red    — selected polygons
+        locked_group_outline_verts = []  # red    — polygons in a selected locked group
 
         # ── Face pass (sorted by texture to minimise glBindTexture calls) ───
         visible = [p for p in iter_polygons(self.root) if is_visible(p)]
@@ -507,8 +528,14 @@ class Scene:
             glEnd()
 
             # Collect outline vertices into buckets
+            in_selected_group = sel_group_ids and any(
+                id(node) in sel_group_ids
+                for node in iter_ancestors(poly_obj)
+            )
             if id(poly_obj) in sel_poly_ids:
                 selected_polys_verts.append(poly)
+            elif in_selected_group:
+                locked_group_outline_verts.append(poly)
             elif poly_obj.group is not self.root:
                 group_outline_verts.append(poly)
             else:
@@ -538,6 +565,18 @@ class Scene:
                         glVertex3f(*poly[i]);  glVertex3f(*poly[(i + 1) % n])
                 glEnd()
             glDisable(GL_BLEND)
+            glLineWidth(1.0)
+
+        # ── Locked-group outlines — red edges for polygons in a selected locked group ──
+        if locked_group_outline_verts:
+            glLineWidth(2.5)
+            glColor4f(1.0, 0.15, 0.15, 0.9)
+            glBegin(GL_LINES)
+            for poly in locked_group_outline_verts:
+                n = len(poly)
+                for i in range(n):
+                    glVertex3f(*poly[i]);  glVertex3f(*poly[(i + 1) % n])
+            glEnd()
             glLineWidth(1.0)
 
         # ── Selection outlines — 1 batched call, no depth test ───────────────

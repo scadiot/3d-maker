@@ -131,3 +131,21 @@ def is_visible(poly: Polygon) -> bool:
             return False
         node = node.parent
     return True
+
+
+def iter_ancestors(poly: Polygon) -> Iterator[Group]:
+    """Yields each ancestor Group of a polygon, from immediate parent up to root."""
+    node = poly.group
+    while node is not None:
+        yield node
+        node = node.parent
+
+
+def is_locked(poly: Polygon) -> bool:
+    """Returns True if the polygon is locked (an ancestor group is locked)."""
+    node = poly.group
+    while node is not None:
+        if node.locked:
+            return True
+        node = node.parent
+    return False
