@@ -18,7 +18,7 @@ from OpenGL.GL import (
 from OpenGL.GLU import gluPerspective
 
 from editor.constants import (PANEL_WIDTH, VIEW_WIDTH, HEIGHT,
-                               FOV, NEAR, FAR, ATLAS_JSON, TEXTURE_PATH)
+                               FOV, NEAR, FAR)
 
 _SEP_WIDTH           = 5
 _PANEL_MIN_WIDTH     = 200
@@ -56,10 +56,6 @@ class Viewport3D(OpenGLFrame):
     def initgl(self):
         glEnable(GL_DEPTH_TEST)
         glClearColor(0.08, 0.08, 0.12, 1.0)
-        ta = TextureAtlas(TEXTURE_PATH, ATLAS_JSON)
-        self._app.scene.load_atlas(ta)
-        if not self._app.state.textures_atlases:
-            self._app.state.textures_atlases = [ta]
 
     def redraw(self):
         self._app._render()
@@ -140,7 +136,6 @@ class App:
         if self.state.modified:
             if not messagebox.askyesno("Quit", "The project has unsaved changes. Do you really want to quit?"):
                 return
-        self.scene.close_tex_preview()
         self.root.destroy()
 
     # ── Menu bar ──────────────────────────────────────────────────────────────
@@ -839,12 +834,6 @@ class App:
         self._sync_gizmo_btns()
 
     def _handle_keyboard(self, key):
-        if key == 't' and self.scene.selected_idx >= 0:
-            if self.scene.tex_preview_win:
-                self.scene.close_tex_preview()
-            else:
-                self.scene.open_tex_preview(self.root)
-
         if key == 'delete' and (self.scene.selected_indices or self.state.selected_groups):
             self._cmd_delete()
 

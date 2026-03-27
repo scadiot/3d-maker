@@ -4,9 +4,8 @@ import copy
 import ctypes
 import json
 import math
-import tkinter as tk
 import numpy as np
-from PIL import Image, ImageTk
+from PIL import Image
 from OpenGL.GL import (
     glGenTextures, glDeleteTextures, glBindTexture, glTexImage2D, glTexParameteri,
     glEnable, glDisable, glCullFace, glFrontFace, glLineWidth, glPointSize,
@@ -25,7 +24,6 @@ from OpenGL.GL import (
     GL_TRIANGLES, GL_LINES, GL_POINTS,
 )
 
-from editor.constants import TEXTURE_PATH, PREVIEW_MAX_SZ
 from editor.texture_atlas import TextureAtlas
 from editor import math3d, serializer
 from editor.group import Group, all_polygons, iter_polygons, is_visible, is_locked, iter_ancestors
@@ -95,8 +93,6 @@ class Scene:
         self.atlas_h       = 1
         self.atlas_data    = {}
 
-        self.tex_preview_win = None
-        self.tex_preview_sz  = 0
 
         # ── VBO state ──────────────────────────────────────────────────────────
         self._vbo_dirty    = True   # rebuild VBOs on next draw
@@ -494,34 +490,6 @@ class Scene:
         target.add_polygon(unique, quad_uvs[:len(unique)])
         self._emit_scene_changed("polygon_added", group=target)
 
-    # ── Texture preview ───────────────────────────────────────────────────────
-    def open_tex_preview(self, root_tk):
-        if self.tex_preview_win:
-            return
-        img = Image.open(TEXTURE_PATH)
-        sz  = min(img.width, PREVIEW_MAX_SZ)
-        self.tex_preview_sz = sz
-        img = img.resize((sz, sz), Image.LANCZOS)
-
-        self.tex_preview_win = tk.Toplevel(root_tk)
-        self.tex_preview_win.title("Texture Preview")
-        self.tex_preview_win.resizable(False, False)
-        self.tex_preview_win.protocol("WM_DELETE_WINDOW", self.close_tex_preview)
-
-        photo = ImageTk.PhotoImage(img)
-        label = tk.Label(self.tex_preview_win, image=photo)
-        label._photo = photo
-        label.pack()
-        label.bind('<Button-1>', lambda e: (
-            self.assign_uv_from_atlas_click((e.x, e.y)),
-            self.close_tex_preview(),
-        ))
-
-    def close_tex_preview(self):
-        if self.tex_preview_win:
-            self.tex_preview_win.destroy()
-            self.tex_preview_win = None
-
     def assign_uv_at_atlas_pixel(self, px, py):
         """Applies atlas UVs to the selected polygon from raw atlas coordinates."""
         entry = next((e for e in self.atlas_data.get("images", [])
@@ -540,11 +508,6 @@ class Scene:
             if self._state:
                 self._state._emit("polygon_transformed")
 
-    def assign_uv_from_atlas_click(self, event_pos):
-        """Applies atlas UVs to the selected polygon based on a click in the preview."""
-        px = int(event_pos[0] * self.atlas_w / self.tex_preview_sz)
-        py = int(event_pos[1] * self.atlas_h / self.tex_preview_sz)
-        self.assign_uv_at_atlas_pixel(px, py)
 
     # ── VBO helpers ───────────────────────────────────────────────────────────
     def _mark_dirty(self, **_kw):

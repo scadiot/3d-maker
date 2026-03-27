@@ -27,7 +27,7 @@ from OpenGL.GL import (
     glPointSize, glLineWidth,
 )
 
-from editor.constants import TEXTURE_PATH, PANEL_WIDTH
+from editor.constants import PANEL_WIDTH
 
 _ZOOM_MIN = 1.0
 _ZOOM_MAX = 32.0
@@ -297,8 +297,6 @@ class UVSelector(tk.Frame):
         self._glframe.bind('<ButtonRelease-2>', self._on_middle_up)
         self._glframe.bind('<Motion>',          self._on_motion)
 
-        self._load_texture()
-
         state = getattr(scene, '_state', None)
         if state is not None:
             state.subscribe("selection_changed",   lambda **_: self._sync_atlas_to_selection())
@@ -386,20 +384,6 @@ class UVSelector(tk.Frame):
             if self._glframe._tex_id is not None:
                 # Will be cleaned up on next redraw; just clear the reference
                 self._glframe._tex_id = None
-
-    # ── Loading ───────────────────────────────────────────────────────────────
-    def _load_texture(self):
-        try:
-            img   = Image.open(TEXTURE_PATH)
-            scale = min(1.0, _SRC_MAX / max(img.width, img.height))
-            self._src_img = img.resize(
-                (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
-                Image.LANCZOS,
-            )
-            self._compute_fit()
-            self._glframe.load_image(self._src_img)
-        except Exception:
-            pass
 
     # ── Fit computation ───────────────────────────────────────────────────────
     def _compute_fit(self):

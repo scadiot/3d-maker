@@ -5,10 +5,6 @@ HEIGHT         = 1080
 FOV            = 60.0
 NEAR, FAR      = 0.05, 2000.0
 
-TEXTURE_PATH   = r"C:\Dev\Paris\assets\textures\atlas_1.png"
-ATLAS_JSON     = r"C:\Dev\Paris\assets\textures\atlas_1.json"
-PREVIEW_MAX_SZ = 512
-
 # ── Camera ────────────────────────────────────────────────────────────────────
 MOVE_SPEED        = 8.0
 MOUSE_SENSITIVITY = 0.15
