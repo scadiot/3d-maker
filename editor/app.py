@@ -595,11 +595,9 @@ class App:
             self.group_panel.refresh()
 
     def _sync_gizmo_btns(self):
-        restricted = self.state.selection_mode in ('vertex', 'edge')
-        extruding  = self.state.extrusion_mode
+        extruding = self.state.extrusion_mode
         for mode, (btn, bg_off, bg_on) in self._gizmo_btns.items():
-            disabled = extruding or (restricted and mode in ('rotate', 'scale'))
-            if disabled:
+            if extruding:
                 btn.config(state='disabled', bg=self._BG_DIS, cursor='')
             else:
                 btn.config(state='normal', cursor='hand2',
@@ -833,8 +831,6 @@ class App:
         mode_map = {'Polygon': 'polygon', 'Edge': 'edge', 'Vertex': 'vertex'}
         new_mode = mode_map[self.sel_mode_var.get()]
         self.state.set_selection_mode(new_mode)
-        if new_mode in ('vertex', 'edge'):
-            self.gizmo.mode = 'translate'
         self._sync_sel_mode_btns()
         self._sync_gizmo_btns()
 
@@ -845,7 +841,7 @@ class App:
         if key == 'c':
             self._cmd_duplicate()
 
-        if key == 'space' and (self.scene.selected_indices or self.state.selected_groups) and not self.state.extrusion_mode:
+        if key == 'space' and (self.scene.selected_indices or self.state.selected_groups or self.state.selected_edges or self.state.selected_vertices) and not self.state.extrusion_mode:
             self.gizmo.cycle_mode()
             self._sync_gizmo_btns()
 
@@ -1279,7 +1275,15 @@ class App:
         gizmo_on  = self.state.gizmo_enable
 
         if sel_mode == 'edge' and self.state.selected_edges:
-            axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera) if gizmo_on else None
+            if gizmo_on:
+                if self.gizmo.mode == 'rotate':
+                    axis = self.gizmo.pick_rotate_axis(mx, my, self.state, self.camera)
+                elif self.gizmo.mode == 'scale':
+                    axis = self.gizmo.pick_scale_handle(mx, my, self.state, self.camera)
+                else:
+                    axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera)
+            else:
+                axis = None
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
             else:
@@ -1287,7 +1291,15 @@ class App:
             return
 
         if sel_mode == 'vertex' and self.state.selected_vertices:
-            axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera) if gizmo_on else None
+            if gizmo_on:
+                if self.gizmo.mode == 'rotate':
+                    axis = self.gizmo.pick_rotate_axis(mx, my, self.state, self.camera)
+                elif self.gizmo.mode == 'scale':
+                    axis = self.gizmo.pick_scale_handle(mx, my, self.state, self.camera)
+                else:
+                    axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera)
+            else:
+                axis = None
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
             else:
