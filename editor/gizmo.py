@@ -107,7 +107,7 @@ def _scale_axis_dir(handle):
 # ── Gizmo class ───────────────────────────────────────────────────────────────
 class Gizmo:
     def __init__(self):
-        self.mode           = 'translate'
+        self.mode           = 'universal'
         self.translate_snap = 0.5
         self.scale_snap     = 0.5
         self.snap_to_grid   = False

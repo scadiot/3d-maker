@@ -90,7 +90,7 @@ class App:
         self.last_time         = time.time()
         self._viewport_focused = False
         # ── Extrusion mode state ──────────────────────────────────────────────
-        self._extrude_prev_gizmo_mode  = 'translate'  # mode to restore on exit
+        self._extrude_prev_gizmo_mode  = 'universal'  # mode to restore on exit
         self._extrude_history_depth    = 0            # undo depth before extrusion
 
         # ── Polygon-split drag state ──────────────────────────────────────────
@@ -369,24 +369,6 @@ class App:
             d.rectangle([cx-4, cy-2, cx-1, cy+2], outline=c, width=1)
             d.rectangle([cx+1, cy-2, cx+4, cy+2], outline=c, width=1)
 
-        def ico_translate(d, s, c):
-            cx, cy, a = s//2, s//2, 6
-            for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
-                ex, ey = cx + dx*a, cy + dy*a
-                d.line([cx, cy, ex, ey], fill=c, width=1)
-                nx, ny = -dy, dx
-                d.polygon([ex, ey,
-                            ex - dx*3 + nx*2, ey - dy*3 + ny*2,
-                            ex - dx*3 - nx*2, ey - dy*3 - ny*2], fill=c)
-
-        def ico_rotate(d, s, c):
-            r = s//2 - 3
-            cx, cy = s//2, s//2
-            d.arc([cx-r, cy-r, cx+r, cy+r], start=30, end=300, fill=c, width=1)
-            ax = cx + r * math.cos(math.radians(30))
-            ay = cy + r * math.sin(math.radians(30))
-            d.polygon([ax, ay, ax-4, ay-1, ax-1, ay+4], fill=c)
-
         def ico_scale(d, s, c):
             d.line([3, s-3, s-3, 3], fill=c, width=1)
             d.polygon([3, s-3, 3, s-8, 8, s-3], fill=c)
@@ -479,10 +461,8 @@ class App:
             self.gizmo.mode = mode
             self._sync_gizmo_btns()
 
-        for mode, ifn, lbl in [('translate', ico_translate, "Translate"),
-                                ('rotate',    ico_rotate,    "Rotate"),
-                                ('scale',     ico_scale,     "Scale"),
-                                ('universal', ico_universal, "Universal")]:
+        for mode, ifn, lbl in [('universal', ico_universal, "Universal"),
+                                ('scale',     ico_scale,     "Scale")]:
             b = add_btn(make_icon(ifn), lambda m=mode: set_gizmo(m), lbl, "Space")
             self._gizmo_btns[mode] = (b, BG, BG_ON)
 
@@ -590,7 +570,7 @@ class App:
         else:
             self.gizmo.position_override = self.gizmo.get_position(self.state)
             self.gizmo.move_gizmo_mode  = True
-            self.gizmo.mode             = 'translate'
+            self.gizmo.mode             = 'universal'
         self._sync_gizmo_btns()
 
     def _on_selection_changed(self):
@@ -652,7 +632,7 @@ class App:
         extruding = self.state.extrusion_mode
         move_gizmo = self.gizmo.move_gizmo_mode
         for mode, (btn, bg_off, bg_on) in self._gizmo_btns.items():
-            if extruding or (move_gizmo and mode in ('rotate', 'scale', 'universal')):
+            if extruding or (move_gizmo and mode in ('scale',)):
                 btn.config(state='disabled', bg=self._BG_DIS, cursor='')
             else:
                 btn.config(state='normal', cursor='hand2',
@@ -1100,7 +1080,7 @@ class App:
         self._extrude_prev_gizmo_mode = self.gizmo.mode
         self.state.extrusion_mode = True
         self.state.selection_enable = False
-        self.gizmo.mode = 'translate'
+        self.gizmo.mode = 'universal'
         self._sync_gizmo_btns()
         self._sync_toolbar2_btns()
 

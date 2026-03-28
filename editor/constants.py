@@ -10,7 +10,7 @@ MOVE_SPEED        = 8.0
 MOUSE_SENSITIVITY = 0.15
 
 # ── Gizmo ─────────────────────────────────────────────────────────────────────
-GIZMO_MODES = ['translate', 'rotate', 'scale', 'universal']
+GIZMO_MODES = ['scale', 'universal']
 
 GIZMO_AXES = {
     'x': ((1, 0, 0), (1.0,  0.25, 0.25)),
