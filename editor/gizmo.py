@@ -146,6 +146,11 @@ class Gizmo:
         self.drag_plane_hit0   = None   # initial ray/plane intersection point
         self.drag_plane_normal = None   # normal of the drag plane
 
+        # Move-gizmo-only mode: drag repositions the gizmo without moving the selection
+        self.move_gizmo_mode       = False
+        self.position_override     = None   # tuple (x,y,z) or None
+        self._move_gizmo_start_pos = None   # position at drag start
+
     # ── Mode ──────────────────────────────────────────────────────────────────
     def cycle_mode(self):
         self.mode = GIZMO_MODES[(GIZMO_MODES.index(self.mode) + 1) % 3]
@@ -176,15 +181,9 @@ class Gizmo:
 
     # ── Drawing ───────────────────────────────────────────────────────────────
     def draw(self, state, camera):
-        if state.selected_edges:
-            center = self._edge_center(state)
-        elif state.selected_vertices:
-            center = self._vertex_center(state)
-        else:
-            polys = self._effective_polys(state)
-            if not polys:
-                return
-            center = _polys_center(polys)
+        center = self._get_center(state)
+        if center is None:
+            return
         if self.mode == 'translate':
             self._draw_translate(center, camera, self.dragging_axis)
         elif self.mode == 'rotate':
@@ -232,15 +231,9 @@ class Gizmo:
 
     # ── Picking ──────────────────────────────────────────────────────────────
     def pick_translate_axis(self, mx, my, state, camera):
-        if state.selected_edges:
-            center = self._edge_center(state)
-        elif state.selected_vertices:
-            center = self._vertex_center(state)
-        else:
-            polys = self._effective_polys(state)
-            if not polys:
-                return None
-            center = _polys_center(polys)
+        center = self._get_center(state)
+        if center is None:
+            return None
         scale  = self._gizmo_scale(center, camera)
         # Plane squares take priority over axis arrows
         offset = scale * 0.18
@@ -269,14 +262,9 @@ class Gizmo:
         return best
 
     def pick_rotate_axis(self, mx, my, state, camera):
-        if state.selected_edges:
-            center = self._edge_center(state)
-        elif state.selected_vertices:
-            center = self._vertex_center(state)
-        else:
-            polys = self._effective_polys(state)
-            if not polys: return None
-            center = _polys_center(polys)
+        center = self._get_center(state)
+        if center is None:
+            return None
         scale  = self._gizmo_scale(center, camera)
         N = 48;  best, best_d = None, 10.0
         for name, (axis_dir, _) in GIZMO_AXES.items():
@@ -293,14 +281,9 @@ class Gizmo:
         return best
 
     def pick_scale_handle(self, mx, my, state, camera):
-        if state.selected_edges:
-            center = self._edge_center(state)
-        elif state.selected_vertices:
-            center = self._vertex_center(state)
-        else:
-            polys = self._effective_polys(state)
-            if not polys: return None
-            center = _polys_center(polys)
+        center = self._get_center(state)
+        if center is None:
+            return None
         handles = self._scale_handle_positions(center, camera)
         best, best_d = None, 15.0
         for name, pos in handles.items():
@@ -312,7 +295,9 @@ class Gizmo:
 
     # ── Drag ─────────────────────────────────────────────────────────────────
     def start_drag(self, axis_or_handle, mx, my, state, camera):
-        if self.mode == 'translate':
+        if self.move_gizmo_mode:
+            self._start_move_gizmo_drag(axis_or_handle, mx, my, state, camera)
+        elif self.mode == 'translate':
             self._start_translate_drag(axis_or_handle, mx, my, state, camera)
         elif self.mode == 'rotate':
             self._start_rotate_drag(axis_or_handle, mx, my, state, camera)
@@ -320,7 +305,9 @@ class Gizmo:
             self._start_scale_drag(axis_or_handle, mx, my, state, camera)
 
     def update_drag(self, mx, my, state, camera):
-        if self.mode == 'translate':
+        if self.move_gizmo_mode:
+            self._update_move_gizmo_drag(mx, my, state, camera)
+        elif self.mode == 'translate':
             self._update_translate_drag(mx, my, state, camera)
         elif self.mode == 'rotate':
             self._update_rotate_drag(mx, my, state, camera)
@@ -350,6 +337,31 @@ class Gizmo:
                                           camera.screen_ray(mx, my),
                                           center, axis_dir)
             return self._snap_move(t - self.drag_axis_t0, center, axis_dir)
+
+    # ── Move-gizmo-only drag ──────────────────────────────────────────────────
+    def _start_move_gizmo_drag(self, axis, mx, my, state, camera):
+        self.dragging_axis = axis
+        center = self._get_center(state) or (0.0, 0.0, 0.0)
+        self._move_gizmo_start_pos = center
+        if axis in GIZMO_PLANES:
+            _, _, normal, _ = GIZMO_PLANES[axis]
+            hit = math3d.ray_plane_intersect(tuple(camera.pos),
+                                             camera.screen_ray(mx, my),
+                                             center, normal)
+            self.drag_plane_hit0   = hit if hit is not None else center
+            self.drag_plane_normal = normal
+        else:
+            self.drag_axis_t0 = math3d.ray_line_closest_s(
+                tuple(camera.pos), camera.screen_ray(mx, my),
+                center, GIZMO_AXES[axis][0])
+
+    def _update_move_gizmo_drag(self, mx, my, state, camera):
+        if self.dragging_axis is None or self._move_gizmo_start_pos is None:
+            return
+        move = self._get_move(mx, my, self._move_gizmo_start_pos, camera)
+        if move is None:
+            return
+        self.position_override = math3d.vadd(self._move_gizmo_start_pos, move)
 
     # ── Translate snap helper ─────────────────────────────────────────────────
     def _snap_move(self, delta, center, axis_dir):
@@ -541,7 +553,6 @@ class Gizmo:
                 self.drag_start_edge_verts[(poly, ei)]              = tuple(q[ei])
                 self.drag_start_edge_verts[(poly, (ei+1) % len(q))] = tuple(q[(ei+1) % len(q)])
             self.drag_start_verts_all = {}
-            center = self._edge_center(state)
             self.drag_before_snapshot = {}
             for poly, _ in self.drag_start_edge_verts:
                 if poly not in self.drag_before_snapshot:
@@ -552,7 +563,6 @@ class Gizmo:
                 if vi < len(q):
                     self.drag_start_vertex_verts[(poly, vi)] = tuple(q[vi])
             self.drag_start_verts_all = {}
-            center = self._vertex_center(state)
             self.drag_before_snapshot = {}
             for poly, _ in self.drag_start_vertex_verts:
                 if poly not in self.drag_before_snapshot:
@@ -570,8 +580,7 @@ class Gizmo:
                 for poly in {p for p, _ in glued}:
                     if poly not in self.drag_before_snapshot:
                         self.drag_before_snapshot[poly] = list(poly.vertices)
-            center = _polys_center(polys)
-        self.drag_center  = center
+        self.drag_center  = self._get_center(state) or (0.0, 0.0, 0.0)
         axis_dir          = GIZMO_AXES[axis][0]
         self.drag_plane_u, self.drag_plane_v = math3d.perp_basis(axis_dir)
         hit = math3d.ray_plane_intersect(tuple(camera.pos),
@@ -644,7 +653,6 @@ class Gizmo:
                 self.drag_start_edge_verts[(poly, ei)]              = tuple(q[ei])
                 self.drag_start_edge_verts[(poly, (ei+1) % len(q))] = tuple(q[(ei+1) % len(q)])
             self.drag_start_verts_all = {}
-            self.drag_center = self._edge_center(state)
             self.drag_before_snapshot = {}
             for poly, _ in self.drag_start_edge_verts:
                 if poly not in self.drag_before_snapshot:
@@ -655,7 +663,6 @@ class Gizmo:
                 if vi < len(q):
                     self.drag_start_vertex_verts[(poly, vi)] = tuple(q[vi])
             self.drag_start_verts_all = {}
-            self.drag_center = self._vertex_center(state)
             self.drag_before_snapshot = {}
             for poly, _ in self.drag_start_vertex_verts:
                 if poly not in self.drag_before_snapshot:
@@ -673,10 +680,7 @@ class Gizmo:
                 for poly in {p for p, _ in glued}:
                     if poly not in self.drag_before_snapshot:
                         self.drag_before_snapshot[poly] = list(poly.vertices)
-            cs = [math3d.poly_center(vs) for vs in self.drag_start_verts_all.values()]
-            n  = len(cs)
-            self.drag_center = (sum(c[0] for c in cs)/n, sum(c[1] for c in cs)/n,
-                                sum(c[2] for c in cs)/n)
+        self.drag_center = self._get_center(state) or (0.0, 0.0, 0.0)
         axis_dir = _scale_axis_dir(handle)
         ray_o = tuple(camera.pos);  ray_d = camera.screen_ray(mx, my)
         self.drag_axis_t0 = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, axis_dir)
@@ -745,8 +749,10 @@ class Gizmo:
             state.notify_polygon_transformed(list(glue_updates.keys()))
 
     # ── Public position query ─────────────────────────────────────────────────
-    def get_position(self, state):
-        """Returns the raw (unsnapped) gizmo center as (x, y, z), or None if nothing selected."""
+    def _get_center(self, state):
+        """Return gizmo center: position_override if set, else computed from selection."""
+        if self.position_override is not None:
+            return self.position_override
         if state.selected_edges:
             return self._edge_center(state)
         if state.selected_vertices:
@@ -755,6 +761,10 @@ class Gizmo:
         if not polys:
             return None
         return _polys_center(polys)
+
+    def get_position(self, state):
+        """Returns the gizmo center as (x, y, z), or None if nothing to show."""
+        return self._get_center(state)
 
     # ── Internal helpers ──────────────────────────────────────────────────────
     def _vertex_center(self, state):

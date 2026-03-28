@@ -81,6 +81,7 @@ class App:
         self._right_resizing      = False
         self._right_resize_start_x = 0
         self._right_resize_start_pw = PANEL_WIDTH
+        self._btn_move_gizmo   = None
         self.history           = HistoryManager()
         self.keys_pressed      = set()
         self.mouse_btn1        = False
@@ -391,6 +392,20 @@ class App:
             d.polygon([3, s-3, 3, s-8, 8, s-3], fill=c)
             d.polygon([s-3, 3, s-3, 8, s-8, 3], fill=c)
 
+        def ico_move_gizmo(d, s, c):
+            cx, cy = s // 2, s // 2
+            r = 3
+            d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=c, width=1)
+            a = 5
+            for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+                bx, by = cx + dx * (r + 2), cy + dy * (r + 2)
+                ex, ey = cx + dx * (r + 2 + a), cy + dy * (r + 2 + a)
+                d.line([bx, by, ex, ey], fill=c, width=1)
+                nx, ny = -dy, dx
+                d.polygon([ex + dx * 3, ey + dy * 3,
+                           ex - dx * 2 + nx * 2, ey - dy * 2 + ny * 2,
+                           ex - dx * 2 - nx * 2, ey - dy * 2 - ny * 2], fill=c)
+
         def ico_sel_polygon(d, s, c):
             # Selected face: square with dimmed fill + strong outline
             d.rectangle([4, 4, s-4, s-4], fill='#404060', outline=c, width=2)
@@ -442,6 +457,7 @@ class App:
 
         # Gizmo buttons (radio-style) — highlighted based on self.gizmo.mode
         def set_gizmo(mode):
+            self.gizmo.move_gizmo_mode = False
             self.gizmo.mode = mode
             self._sync_gizmo_btns()
 
@@ -452,6 +468,11 @@ class App:
             self._gizmo_btns[mode] = (b, BG, BG_ON)
 
         self._sync_gizmo_btns()
+        add_sep()
+
+        self._btn_move_gizmo = add_btn(make_icon(ico_move_gizmo),
+                                       self._toggle_move_gizmo_mode,
+                                       "Move Gizmo")
         add_sep()
 
         # Selection mode buttons (radio-style)
@@ -544,10 +565,22 @@ class App:
         self.state.vertex_glue = not self.state.vertex_glue
         self._btn_vertex_glue.config(bg='#2d4080' if self.state.vertex_glue else '#16161f')
 
+    def _toggle_move_gizmo_mode(self):
+        if self.gizmo.move_gizmo_mode:
+            self.gizmo.move_gizmo_mode = False
+        else:
+            self.gizmo.position_override = self.gizmo.get_position(self.state)
+            self.gizmo.move_gizmo_mode  = True
+            self.gizmo.mode             = 'translate'
+        self._sync_gizmo_btns()
+
     def _on_selection_changed(self):
         if self.state.extrusion_mode and not self.state.selected_edges:
             self._cmd_exit_extrusion(confirm=True)
             return
+        self.gizmo.position_override = None
+        self.gizmo.move_gizmo_mode   = False
+        self._sync_gizmo_btns()
         self._sync_toolbar2_btns()
 
     def _sync_toolbar2_btns(self):
@@ -595,6 +628,8 @@ class App:
             self.group_panel.refresh()
 
     def _sync_gizmo_btns(self):
+        BG    = '#16161f'
+        BG_ON = '#2d4080'
         extruding = self.state.extrusion_mode
         for mode, (btn, bg_off, bg_on) in self._gizmo_btns.items():
             if extruding:
@@ -602,6 +637,12 @@ class App:
             else:
                 btn.config(state='normal', cursor='hand2',
                            bg=bg_on if self.gizmo.mode == mode else bg_off)
+        if self._btn_move_gizmo is not None:
+            if extruding:
+                self._btn_move_gizmo.config(state='disabled', bg=self._BG_DIS, cursor='')
+            else:
+                self._btn_move_gizmo.config(state='normal', cursor='hand2',
+                                            bg=BG_ON if self.gizmo.move_gizmo_mode else BG)
 
     def _sync_sel_mode_btns(self):
         for mode, (btn, bg_off, bg_on) in self._sel_btns.items():
