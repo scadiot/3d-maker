@@ -639,6 +639,18 @@ class Gizmo:
                 poly.vertices = q
             state.notify_polygon_transformed(list(glue_updates.keys()))
 
+    # ── Public position query ─────────────────────────────────────────────────
+    def get_position(self, state):
+        """Returns the raw (unsnapped) gizmo center as (x, y, z), or None if nothing selected."""
+        if state.selected_edges:
+            return self._edge_center(state)
+        if state.selected_vertices:
+            return self._vertex_center(state)
+        polys = self._effective_polys(state)
+        if not polys:
+            return None
+        return _polys_center(polys)
+
     # ── Internal helpers ──────────────────────────────────────────────────────
     def _vertex_center(self, state):
         verts = []

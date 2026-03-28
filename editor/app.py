@@ -31,8 +31,9 @@ from editor.scene         import Scene
 from editor.gizmo         import Gizmo
 from editor.view_cube     import ViewCube
 from editor.renderer      import draw_grid
-from editor.uv_selector   import UVSelector
-from editor.group_panel   import GroupPanel
+from editor.uv_selector          import UVSelector
+from editor.group_panel          import GroupPanel
+from editor.gizmo_position_panel import GizmoPositionPanel
 from editor.state_manager import StateManager
 from editor.history       import (HistoryManager, AddPolygonsCommand,
                                    DeletePolygonsCommand, PolyDataCommand,
@@ -678,6 +679,10 @@ class App:
         self.right_panel = tk.Frame(self.root, width=self.right_panel_width, bg='#1a1a21')
         self.right_panel.pack(side=tk.RIGHT, fill=tk.Y)
         self.right_panel.pack_propagate(False)
+
+        self.gizmo_position_panel = GizmoPositionPanel(
+            self.right_panel, self.state, self.gizmo, self.history)
+        self.gizmo_position_panel.pack(fill=tk.X)
 
         self.group_panel = GroupPanel(self.right_panel, self.scene, self)
         self.group_panel.pack(fill=tk.BOTH, expand=True)
