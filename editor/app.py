@@ -392,6 +392,24 @@ class App:
             d.polygon([3, s-3, 3, s-8, 8, s-3], fill=c)
             d.polygon([s-3, 3, s-3, 8, s-8, 3], fill=c)
 
+        def ico_universal(d, s, c):
+            cx, cy, a = s//2, s//2, 5
+            # Two translate arrows (up and right)
+            for dx, dy in [(0, -1), (1, 0)]:
+                ex, ey = cx + dx*a, cy + dy*a
+                d.line([cx, cy, ex, ey], fill=c, width=1)
+                nx, ny = -dy, dx
+                d.polygon([ex, ey,
+                            ex - dx*3 + nx*2, ey - dy*3 + ny*2,
+                            ex - dx*3 - nx*2, ey - dy*3 - ny*2], fill=c)
+            # Outer rotation ring
+            r = s//2 - 2
+            d.arc([cx-r, cy-r, cx+r, cy+r], start=0, end=360, fill=c, width=1)
+            # Small scale box at bottom-left axis
+            bs = 2
+            bx, by = cx - a + 1, cy + a - 1
+            d.rectangle([bx-bs, by-bs, bx+bs, by+bs], outline=c, width=1)
+
         def ico_move_gizmo(d, s, c):
             cx, cy = s // 2, s // 2
             r = 3
@@ -463,7 +481,8 @@ class App:
 
         for mode, ifn, lbl in [('translate', ico_translate, "Translate"),
                                 ('rotate',    ico_rotate,    "Rotate"),
-                                ('scale',     ico_scale,     "Scale")]:
+                                ('scale',     ico_scale,     "Scale"),
+                                ('universal', ico_universal, "Universal")]:
             b = add_btn(make_icon(ifn), lambda m=mode: set_gizmo(m), lbl, "Space")
             self._gizmo_btns[mode] = (b, BG, BG_ON)
 
@@ -633,7 +652,7 @@ class App:
         extruding = self.state.extrusion_mode
         move_gizmo = self.gizmo.move_gizmo_mode
         for mode, (btn, bg_off, bg_on) in self._gizmo_btns.items():
-            if extruding or (move_gizmo and mode in ('rotate', 'scale')):
+            if extruding or (move_gizmo and mode in ('rotate', 'scale', 'universal')):
                 btn.config(state='disabled', bg=self._BG_DIS, cursor='')
             else:
                 btn.config(state='normal', cursor='hand2',
@@ -698,7 +717,7 @@ class App:
         grp_name = getattr(grp, 'name', None) or 'Root'
         self._status_group_lbl.config(text=f'Group: {grp_name}')
 
-        mode_labels = {'translate': 'Translate', 'rotate': 'Rotate', 'scale': 'Scale'}
+        mode_labels = {'translate': 'Translate', 'rotate': 'Rotate', 'scale': 'Scale', 'universal': 'Universal'}
         sel_mode_labels = {'polygon': 'Polygon', 'edge': 'Edge', 'vertex': 'Vertex'}
         right = (f"Gizmo: {mode_labels.get(self.gizmo.mode, self.gizmo.mode)}   "
                  f"Mode: {sel_mode_labels.get(self.state.selection_mode, self.state.selection_mode)}")
@@ -1322,6 +1341,8 @@ class App:
                     axis = self.gizmo.pick_rotate_axis(mx, my, self.state, self.camera)
                 elif self.gizmo.mode == 'scale':
                     axis = self.gizmo.pick_scale_handle(mx, my, self.state, self.camera)
+                elif self.gizmo.mode == 'universal':
+                    axis = self.gizmo.pick_universal_axis(mx, my, self.state, self.camera)
                 else:
                     axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera)
             else:
@@ -1338,6 +1359,8 @@ class App:
                     axis = self.gizmo.pick_rotate_axis(mx, my, self.state, self.camera)
                 elif self.gizmo.mode == 'scale':
                     axis = self.gizmo.pick_scale_handle(mx, my, self.state, self.camera)
+                elif self.gizmo.mode == 'universal':
+                    axis = self.gizmo.pick_universal_axis(mx, my, self.state, self.camera)
                 else:
                     axis = self.gizmo.pick_translate_axis(mx, my, self.state, self.camera)
             else:
@@ -1363,6 +1386,15 @@ class App:
 
         elif self.gizmo.mode == 'rotate':
             axis = self.gizmo.pick_rotate_axis(mx, my, self.state, self.camera) if gizmo_on else None
+            if axis:
+                self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
+            elif sel_mode == 'edge':
+                self._apply_edge_selection(self._pick_edge(mx, my), ctrl_held)
+            else:
+                self._handle_polygon_click(mx, my, ctrl_held)
+
+        elif self.gizmo.mode == 'universal':
+            axis = self.gizmo.pick_universal_axis(mx, my, self.state, self.camera) if gizmo_on else None
             if axis:
                 self.gizmo.start_drag(axis, mx, my, self.state, self.camera)
             elif sel_mode == 'edge':

@@ -152,9 +152,12 @@ class Gizmo:
         self._move_gizmo_start_pos = None   # position at drag start
         self._drag_start_position_override = None  # position_override at translate drag start
 
+        # Universal mode: tracks which sub-transform is being dragged
+        self._universal_sub_mode: str | None = None
+
     # ── Mode ──────────────────────────────────────────────────────────────────
     def cycle_mode(self):
-        self.mode = GIZMO_MODES[(GIZMO_MODES.index(self.mode) + 1) % 3]
+        self.mode = GIZMO_MODES[(GIZMO_MODES.index(self.mode) + 1) % len(GIZMO_MODES)]
         self.dragging_axis = None
 
     def stop_drag(self):
@@ -167,6 +170,7 @@ class Gizmo:
         self.drag_start_glued_verts  = {}
         self.drag_plane_hit0         = None
         self.drag_plane_normal       = None
+        self._universal_sub_mode     = None
 
     def finish_drag(self, history, state) -> None:
         """Finalizes the drag and records the transform in history."""
@@ -189,6 +193,8 @@ class Gizmo:
             self._draw_translate(center, camera, self.dragging_axis)
         elif self.mode == 'rotate':
             self._draw_rotate(center, camera, self.dragging_axis)
+        elif self.mode == 'universal':
+            self._draw_universal(center, camera)
         else:
             self._draw_scale(center, camera, self.dragging_axis)
 
@@ -229,6 +235,45 @@ class Gizmo:
             box_s = bs * (1.5 if name == 'uniform' else 1.0) * (1.4 if name == active else 1.0)
             _draw_box_3d(pos, box_s, r, g, b)
         glLineWidth(1.0);  glEnable(GL_DEPTH_TEST)
+
+    def _draw_universal(self, center, camera):
+        scale     = self._gizmo_scale(center, camera)
+        rot_scale = scale * 0.7
+        sub       = self._universal_sub_mode
+        active_ax = self.dragging_axis
+
+        glDisable(GL_DEPTH_TEST)
+
+        # Rotation rings (outer)
+        N = 48
+        for name, (axis_dir, color) in GIZMO_AXES.items():
+            is_active = (sub == 'rotate' and name == active_ax)
+            r, g, b = (1.0, 0.9, 0.1) if is_active else color
+            glColor3f(r, g, b)
+            glLineWidth(2.5 if is_active else 1.5)
+            u, v = math3d.perp_basis(axis_dir)
+            glBegin(GL_LINE_LOOP)
+            for i in range(N):
+                a = 2 * math.pi * i / N
+                p = math3d.vadd(center,
+                                math3d.vadd(math3d.vscale(u, rot_scale * math.cos(a)),
+                                            math3d.vscale(v, rot_scale * math.sin(a))))
+                glVertex3f(*p)
+            glEnd()
+
+        # Plane squares (translate)
+        active_plane = active_ax if (sub == 'translate' and active_ax in GIZMO_PLANES) else None
+        _draw_plane_squares(center, scale, active_plane)
+
+        # Translation arrows
+        active_trans = active_ax if (sub == 'translate' and active_ax in GIZMO_AXES) else None
+        for name, (axis_dir, color) in GIZMO_AXES.items():
+            _draw_arrow_3d(center,
+                           math3d.vadd(center, math3d.vscale(axis_dir, scale)),
+                           color, name == active_trans)
+
+        glLineWidth(1.0)
+        glEnable(GL_DEPTH_TEST)
 
     # ── Picking ──────────────────────────────────────────────────────────────
     def pick_translate_axis(self, mx, my, state, camera):
@@ -294,9 +339,74 @@ class Gizmo:
                 if d < best_d: best_d, best = d, name
         return best
 
+    def pick_universal_axis(self, mx, my, state, camera):
+        """Return a prefixed handle string ('t:x', 'r:y', …) or None."""
+        center = self._get_center(state)
+        if center is None:
+            return None
+        scale     = self._gizmo_scale(center, camera)
+        rot_scale = scale * 0.7
+
+        best   = None
+        best_d = float('inf')
+
+        # Plane squares (exact containment → immediate return)
+        offset = scale * 0.18
+        half   = scale * 0.07
+        for name, (a1, a2, _normal, _color) in GIZMO_PLANES.items():
+            sq_c = math3d.vadd(center, math3d.vadd(math3d.vscale(a1, offset),
+                                                   math3d.vscale(a2, offset)))
+            corners_3d = [
+                math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1, -half), math3d.vscale(a2, -half))),
+                math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1,  half), math3d.vscale(a2, -half))),
+                math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1,  half), math3d.vscale(a2,  half))),
+                math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1, -half), math3d.vscale(a2,  half))),
+            ]
+            corners_2d = [camera.world_to_screen(*c) for c in corners_3d]
+            if all(c is not None for c in corners_2d):
+                if _point_in_quad_2d(mx, my, corners_2d):
+                    return 't:' + name
+
+        # Translation arrows (10 px proximity)
+        for name, (axis_dir, _) in GIZMO_AXES.items():
+            p0 = camera.world_to_screen(*center)
+            p1 = camera.world_to_screen(*math3d.vadd(center, math3d.vscale(axis_dir, scale)))
+            if p0 and p1:
+                d = math3d.seg_dist_2d(mx, my, p0[0], p0[1], p1[0], p1[1])
+                if d < 10.0 and d < best_d:
+                    best_d, best = d, 't:' + name
+
+        # Rotation rings (10 px proximity, outer)
+        N = 48
+        for name, (axis_dir, _) in GIZMO_AXES.items():
+            u, v = math3d.perp_basis(axis_dir)
+            prev = None
+            for i in range(N + 1):
+                a  = 2 * math.pi * i / N
+                p  = math3d.vadd(center,
+                                 math3d.vadd(math3d.vscale(u, rot_scale * math.cos(a)),
+                                             math3d.vscale(v, rot_scale * math.sin(a))))
+                sp = camera.world_to_screen(*p)
+                if sp and prev:
+                    d = math3d.seg_dist_2d(mx, my, prev[0], prev[1], sp[0], sp[1])
+                    if d < 10.0 and d < best_d:
+                        best_d, best = d, 'r:' + name
+                prev = sp if sp else None
+
+        return best
+
     # ── Drag ─────────────────────────────────────────────────────────────────
     def start_drag(self, axis_or_handle, mx, my, state, camera):
-        if self.move_gizmo_mode:
+        if self.mode == 'universal':
+            prefix, _, raw = axis_or_handle.partition(':')
+            self._universal_sub_mode = {'t': 'translate', 'r': 'rotate', 's': 'scale'}[prefix]
+            if self._universal_sub_mode == 'translate':
+                self._start_translate_drag(raw, mx, my, state, camera)
+            elif self._universal_sub_mode == 'rotate':
+                self._start_rotate_drag(raw, mx, my, state, camera)
+            else:
+                self._start_scale_drag(raw, mx, my, state, camera)
+        elif self.move_gizmo_mode:
             self._start_move_gizmo_drag(axis_or_handle, mx, my, state, camera)
         elif self.mode == 'translate':
             self._start_translate_drag(axis_or_handle, mx, my, state, camera)
@@ -306,7 +416,14 @@ class Gizmo:
             self._start_scale_drag(axis_or_handle, mx, my, state, camera)
 
     def update_drag(self, mx, my, state, camera):
-        if self.move_gizmo_mode:
+        if self.mode == 'universal':
+            if self._universal_sub_mode == 'translate':
+                self._update_translate_drag(mx, my, state, camera)
+            elif self._universal_sub_mode == 'rotate':
+                self._update_rotate_drag(mx, my, state, camera)
+            elif self._universal_sub_mode == 'scale':
+                self._update_scale_drag(mx, my, state, camera)
+        elif self.move_gizmo_mode:
             self._update_move_gizmo_drag(mx, my, state, camera)
         elif self.mode == 'translate':
             self._update_translate_drag(mx, my, state, camera)
