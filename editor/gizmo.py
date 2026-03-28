@@ -150,6 +150,7 @@ class Gizmo:
         self.move_gizmo_mode       = False
         self.position_override     = None   # tuple (x,y,z) or None
         self._move_gizmo_start_pos = None   # position at drag start
+        self._drag_start_position_override = None  # position_override at translate drag start
 
     # ── Mode ──────────────────────────────────────────────────────────────────
     def cycle_mode(self):
@@ -416,6 +417,7 @@ class Gizmo:
     # ── Translate drag ────────────────────────────────────────────────────────
     def _start_translate_drag(self, axis, mx, my, state, camera):
         self.dragging_axis = axis
+        self._drag_start_position_override = self.position_override
         if state.selected_edges:
             self.drag_start_edge_verts   = {}
             self.drag_start_vertex_verts = {}
@@ -528,6 +530,9 @@ class Gizmo:
             for poly, start_verts in self.drag_start_verts_all.items():
                 poly.vertices = [math3d.vadd(v, move) for v in start_verts]
             state.notify_polygon_transformed(list(self.drag_start_verts_all.keys()))
+        # ── Offset position_override by the same move ─────────────────────────
+        if move is not None and self._drag_start_position_override is not None:
+            self.position_override = math3d.vadd(self._drag_start_position_override, move)
         # ── Apply glued vertices ──────────────────────────────────────────────
         if move is not None and self.drag_start_glued_verts:
             glue_updates = {}
