@@ -58,15 +58,13 @@ class Camera:
         panning: when True, Z/S move forward/backward; otherwise Z/S move vertically."""
         speed = MOVE_SPEED * dt
         fwd, rgt = self.forward_xz(), self.right_xz()
-        if panning:
-            if 'z' in keys: self.pos[0] -= fwd[0]*speed; self.pos[1] += fwd[1]*speed; self.pos[2] -= fwd[2]*speed
-            if 's' in keys: self.pos[0] += fwd[0]*speed; self.pos[1] -= fwd[1]*speed; self.pos[2] += fwd[2]*speed
-        else:
-            up = self.up_vector()
-            if 'z' in keys: self.pos[0] += up[0]*speed; self.pos[1] += up[1]*speed; self.pos[2] += up[2]*speed
-            if 's' in keys: self.pos[0] -= up[0]*speed; self.pos[1] -= up[1]*speed; self.pos[2] -= up[2]*speed
+        if 'z' in keys: self.pos[0] -= fwd[0]*speed; self.pos[1] += fwd[1]*speed; self.pos[2] -= fwd[2]*speed
+        if 's' in keys: self.pos[0] += fwd[0]*speed; self.pos[1] -= fwd[1]*speed; self.pos[2] += fwd[2]*speed
         if 'q' in keys: self.pos[0] -= rgt[0]*speed; self.pos[2] -= rgt[2]*speed
         if 'd' in keys: self.pos[0] += rgt[0]*speed; self.pos[2] += rgt[2]*speed
+        up = self.up_vector()
+        if 'r' in keys: self.pos[0] += up[0]*speed; self.pos[1] += up[1]*speed; self.pos[2] += up[2]*speed
+        if 'f' in keys: self.pos[0] -= up[0]*speed; self.pos[1] -= up[1]*speed; self.pos[2] -= up[2]*speed
 
     def apply_mouse_look(self, dx, dy):
         self.yaw   = (self.yaw   - dx * MOUSE_SENSITIVITY) % 360.0
