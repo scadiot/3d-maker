@@ -133,7 +133,6 @@ class _DarkDropdown(tk.Frame):
 
         lb.bind('<Motion>',          lambda e: self._lb_hover(e, lb))
         lb.bind('<ButtonRelease-1>', lambda e: self._select(lb) or 'break')
-        self._popup.bind('<Button-1>', lambda e: self._close_popup())
         self._popup.bind('<Escape>',   lambda e: self._close_popup())
         self._popup.grab_set()
         self._popup.focus_set()
@@ -350,6 +349,7 @@ class UVSelector(tk.Frame):
             poly.texture_atlas_id = atlas.id
         if state.selected_polygons:
             state._modified = True
+            state._emit("scene_changed", change_type="texture_assigned")
 
     def _sync_atlas_to_selection(self):
         state = getattr(self._scene, '_state', None)

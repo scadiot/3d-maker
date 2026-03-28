@@ -93,6 +93,8 @@ class Scene:
         self.atlas_h       = 1
         self.atlas_data    = {}
 
+        # Atlases queued for GL upload on the next draw() (context-safe)
+        self._pending_atlases: list = []
 
         # ── VBO state ──────────────────────────────────────────────────────────
         self._vbo_dirty    = True   # rebuild VBOs on next draw
@@ -173,7 +175,12 @@ class Scene:
 
     # ── Loading ───────────────────────────────────────────────────────────────
     def load_atlas(self, atlas: TextureAtlas) -> None:
-        """Loads a TextureAtlas into poly_textures dict by atlas id."""
+        """Queues a TextureAtlas for GL upload on the next draw() call."""
+        self._pending_atlases.append(atlas)
+        self._vbo_dirty = True
+
+    def _upload_atlas(self, atlas: TextureAtlas) -> None:
+        """Actually uploads a TextureAtlas to OpenGL (must be called with an active GL context)."""
         if atlas.id in self.poly_textures:
             glDeleteTextures(1, [self.poly_textures[atlas.id]])
         self.load_texture(atlas.image_path)
@@ -529,7 +536,7 @@ class Scene:
     def _rebuild_vbos(self, sel_poly_ids, sel_edges, sel_verts, sel_group_ids):
         """Rebuild every VBO from the current scene state."""
         visible = [p for p in iter_polygons(self.root) if is_visible(p)]
-        visible.sort(key=lambda p: p.texture_atlas_id or '')
+        visible.sort(key=lambda p: str(p.texture_atlas_id) if p.texture_atlas_id is not None else '')
 
         # Collect poly refs needed for edge/vertex detail passes
         needed_ids       = {id(p) for p, _ in sel_edges} | {id(p) for p, _ in sel_verts}
@@ -551,7 +558,7 @@ class Scene:
                 poly_verts_by_id[id(poly_obj)] = v
 
             # Fan-triangulate into flat interleaved array
-            atlas_id = poly_obj.texture_atlas_id or None
+            atlas_id = poly_obj.texture_atlas_id if poly_obj.texture_atlas_id is not None else None
             face_buf = polys_by_tex.setdefault(atlas_id, [])
             for i in range(n - 2):
                 for idx in (0, i + 1, i + 2):
@@ -634,6 +641,12 @@ class Scene:
 
     # ── Rendering ─────────────────────────────────────────────────────────────
     def draw(self):
+        # Upload any atlases queued outside the GL frame (context is now active)
+        if self._pending_atlases:
+            for atlas in self._pending_atlases:
+                self._upload_atlas(atlas)
+            self._pending_atlases.clear()
+
         # Lazy subscription to state events (first draw after state is injected)
         if self._state is not None and not self._subscribed:
             self._state.subscribe("scene_changed",      self._mark_dirty)
