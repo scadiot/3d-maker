@@ -846,7 +846,7 @@ class App:
             self._cmd_duplicate()
 
         if key == 'space' and (self.scene.selected_indices or self.state.selected_groups) and not self.state.extrusion_mode:
-            self.gizmo.cycle_mode(len(self.scene.selected_indices) > 1 or bool(self.state.selected_groups))
+            self.gizmo.cycle_mode()
             self._sync_gizmo_btns()
 
         if key == 'g' and len(self.scene.selected_indices) >= 2:

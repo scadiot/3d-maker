@@ -96,6 +96,14 @@ def _polys_center(polys):
     return (sum(c[0] for c in cs)/n, sum(c[1] for c in cs)/n, sum(c[2] for c in cs)/n)
 
 
+def _scale_axis_dir(handle):
+    """Return the world-space axis direction for a scale handle name."""
+    if handle == 'x':      return (1.0, 0.0, 0.0)
+    elif handle == 'y':    return (0.0, 1.0, 0.0)
+    elif handle == 'z':    return (0.0, 0.0, 1.0)
+    else:                  return math3d.normalize((1.0, 1.0, 1.0))  # 'uniform'
+
+
 # ── Gizmo class ───────────────────────────────────────────────────────────────
 class Gizmo:
     def __init__(self):
@@ -139,11 +147,8 @@ class Gizmo:
         self.drag_plane_normal = None   # normal of the drag plane
 
     # ── Mode ──────────────────────────────────────────────────────────────────
-    def cycle_mode(self, multi_selected):
-        if multi_selected:
-            self.mode = 'rotate' if self.mode == 'translate' else 'translate'
-        else:
-            self.mode = GIZMO_MODES[(GIZMO_MODES.index(self.mode) + 1) % 3]
+    def cycle_mode(self):
+        self.mode = GIZMO_MODES[(GIZMO_MODES.index(self.mode) + 1) % 3]
         self.dragging_axis = None
 
     def stop_drag(self):
@@ -180,21 +185,13 @@ class Gizmo:
         polys = self._effective_polys(state)
         if not polys:
             return
-        if len(polys) > 1:
-            center = self._snap_pos(_polys_center(polys))
-            if self.mode == 'rotate':
-                self._draw_rotate(center, camera, self.dragging_axis)
-            else:
-                self._draw_translate(center, camera, self.dragging_axis)
+        center = self._snap_pos(_polys_center(polys))
+        if self.mode == 'translate':
+            self._draw_translate(center, camera, self.dragging_axis)
+        elif self.mode == 'rotate':
+            self._draw_rotate(center, camera, self.dragging_axis)
         else:
-            q = polys[-1].vertices
-            c = self._snap_pos(math3d.poly_center(q))
-            if self.mode == 'translate':
-                self._draw_translate(c, camera, self.dragging_axis)
-            elif self.mode == 'rotate':
-                self._draw_rotate(c, camera, self.dragging_axis)
-            else:
-                self._draw_scale(q, camera, self.dragging_axis)
+            self._draw_scale(center, camera, self.dragging_axis)
 
     def _draw_translate(self, center, camera, active=None):
         scale = self._gizmo_scale(center, camera)
@@ -221,19 +218,17 @@ class Gizmo:
             glEnd()
         glLineWidth(1.0);  glEnable(GL_DEPTH_TEST)
 
-    def _draw_scale(self, quad, camera, active=None):
-        if len(quad) != 4:
-            self._draw_translate(math3d.poly_center(quad), camera, active)
-            return
-        center = math3d.poly_center(quad)
-        bs = self._gizmo_scale(center, camera) * 0.1
-        handles = self._scale_handle_positions(quad, camera)
+    def _draw_scale(self, center, camera, active=None):
+        scale = self._gizmo_scale(center, camera)
+        bs = scale * 0.1
+        handles = self._scale_handle_positions(center, camera)
         glDisable(GL_DEPTH_TEST);  glLineWidth(2.0)
         for name, pos in handles.items():
             r, g, b = (1.0, 0.9, 0.1) if name == active else SCALE_COLORS[name]
             glColor3f(r, g, b)
             glBegin(GL_LINES); glVertex3f(*center); glVertex3f(*pos); glEnd()
-            _draw_box_3d(pos, bs * (1.4 if name == active else 1.0), r, g, b)
+            box_s = bs * (1.5 if name == 'uniform' else 1.0) * (1.4 if name == active else 1.0)
+            _draw_box_3d(pos, box_s, r, g, b)
         glLineWidth(1.0);  glEnable(GL_DEPTH_TEST)
 
     # ── Picking ──────────────────────────────────────────────────────────────
@@ -294,11 +289,10 @@ class Gizmo:
         return best
 
     def pick_scale_handle(self, mx, my, state, camera):
-        polys = state.selected_polygons
+        polys = self._effective_polys(state)
         if not polys: return None
-        q = polys[-1].vertices
-        if len(q) != 4: return None
-        handles = self._scale_handle_positions(q, camera)
+        center = self._snap_pos(_polys_center(polys))
+        handles = self._scale_handle_positions(center, camera)
         best, best_d = None, 15.0
         for name, pos in handles.items():
             sp = camera.world_to_screen(*pos)
@@ -582,56 +576,59 @@ class Gizmo:
     # ── Scale drag ────────────────────────────────────────────────────────────
     def _start_scale_drag(self, handle, mx, my, state, camera):
         self.dragging_axis = handle
-        polys = state.selected_polygons
+        polys = self._effective_polys(state)
         if not polys: return
-        self.drag_poly        = polys[-1]
-        self.drag_start_verts = list(self.drag_poly.vertices)
-        self.drag_before_snapshot = {self.drag_poly: list(self.drag_start_verts)}
+        self.drag_start_verts_all = {p: list(p.vertices) for p in polys}
+        self.drag_before_snapshot = {p: list(vs) for p, vs in self.drag_start_verts_all.items()}
         self.drag_start_glued_verts = {}
         if state.vertex_glue:
-            glued = self._find_glued_extra(
-                state, self.drag_start_verts, set(), {self.drag_poly})
+            moving = [v for vs in self.drag_start_verts_all.values() for v in vs]
+            glued = self._find_glued_extra(state, moving, set(), set(self.drag_start_verts_all.keys()))
             self.drag_start_glued_verts = glued
             for poly in {p for p, _ in glued}:
                 if poly not in self.drag_before_snapshot:
                     self.drag_before_snapshot[poly] = list(poly.vertices)
-        (self.drag_center, self.drag_wa, self.drag_ha,
-         self.drag_hw0, self.drag_hh0) = math3d.quad_decompose(self.drag_start_verts)
+        cs = [math3d.poly_center(vs) for vs in self.drag_start_verts_all.values()]
+        n  = len(cs)
+        self.drag_center = (sum(c[0] for c in cs)/n, sum(c[1] for c in cs)/n,
+                            sum(c[2] for c in cs)/n)
+        axis_dir = _scale_axis_dir(handle)
         ray_o = tuple(camera.pos);  ray_d = camera.screen_ray(mx, my)
-        if handle == 'width':
-            self.drag_axis_t0 = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, self.drag_wa)
-        elif handle == 'height':
-            self.drag_axis_t0 = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, self.drag_ha)
-        else:
-            diag = math3d.normalize(math3d.vadd(self.drag_wa, self.drag_ha))
-            self.drag_axis_t0 = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, diag)
+        self.drag_axis_t0 = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, axis_dir)
 
     def _update_scale_drag(self, mx, my, state, camera):
-        if self.dragging_axis is None or self.drag_start_verts is None or self.drag_poly is None: return
+        if self.dragging_axis is None or not self.drag_start_verts_all or self.drag_center is None:
+            return
+        axis_dir = _scale_axis_dir(self.dragging_axis)
         ray_o = tuple(camera.pos);  ray_d = camera.screen_ray(mx, my)
-        snap  = lambda x: max(self.scale_snap, round(x / self.scale_snap) * self.scale_snap)
-        if self.dragging_axis == 'width':
-            t = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, self.drag_wa)
-            new_hw = snap(self.drag_hw0 + (t - self.drag_axis_t0));  new_hh = self.drag_hh0
-        elif self.dragging_axis == 'height':
-            t = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, self.drag_ha)
-            new_hw = self.drag_hw0;  new_hh = snap(self.drag_hh0 + (t - self.drag_axis_t0))
-        else:
-            diag  = math3d.normalize(math3d.vadd(self.drag_wa, self.drag_ha))
-            t     = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, diag)
-            delta = t - self.drag_axis_t0
-            new_hw = snap(self.drag_hw0 + delta);  new_hh = snap(self.drag_hh0 + delta)
-        self.drag_poly.vertices = math3d.quad_compose(
-            self.drag_center, self.drag_wa, self.drag_ha, new_hw, new_hh)
-        state.notify_polygon_transformed([self.drag_poly])
+        t  = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, axis_dir)
+        t0 = self.drag_axis_t0
+        if abs(t0) < 1e-6: return
+        snap   = self.scale_snap
+        delta  = round((t - t0) / snap) * snap
+        sf     = (t0 + delta) / t0   # snapped scale factor
+        cx, cy, cz = self.drag_center
+        handle = self.dragging_axis
+
+        def _scale_vertex(v):
+            if handle == 'x':
+                return (cx + (v[0] - cx) * sf, v[1], v[2])
+            elif handle == 'y':
+                return (v[0], cy + (v[1] - cy) * sf, v[2])
+            elif handle == 'z':
+                return (v[0], v[1], cz + (v[2] - cz) * sf)
+            else:  # uniform
+                return (cx + (v[0]-cx)*sf, cy + (v[1]-cy)*sf, cz + (v[2]-cz)*sf)
+
+        updated = []
+        for poly, start_verts in self.drag_start_verts_all.items():
+            poly.vertices = [_scale_vertex(v) for v in start_verts]
+            updated.append(poly)
+        state.notify_polygon_transformed(updated)
         if self.drag_start_glued_verts:
-            pos_map = {old: new for old, new in zip(self.drag_start_verts,
-                                                    self.drag_poly.vertices)}
             glue_updates = {}
-            for (poly, vi), start_pos in self.drag_start_glued_verts.items():
-                new_pos = pos_map.get(start_pos)
-                if new_pos is not None:
-                    glue_updates.setdefault(poly, {})[vi] = new_pos
+            for (poly, vi), start_v in self.drag_start_glued_verts.items():
+                glue_updates.setdefault(poly, {})[vi] = _scale_vertex(start_v)
             for poly, vi_verts in glue_updates.items():
                 q = list(poly.vertices)
                 for vi, new_v in vi_verts.items():
@@ -684,12 +681,12 @@ class Gizmo:
     def _gizmo_scale(self, center, camera):
         return max(0.5, math3d.vlength(math3d.vsub(tuple(camera.pos), center)) * 0.2)
 
-    def _scale_handle_positions(self, quad, camera):
-        center, wa, ha, hw, hh = math3d.quad_decompose(quad)
-        off  = self._gizmo_scale(center, camera) * 0.3
-        diag = math3d.normalize(math3d.vadd(wa, ha))
+    def _scale_handle_positions(self, center, camera):
+        scale = self._gizmo_scale(center, camera) * 0.7
+        diag  = math3d.normalize((1.0, 1.0, 1.0))
         return {
-            'width':   math3d.vadd(center, math3d.vscale(wa, hw + off)),
-            'height':  math3d.vadd(center, math3d.vscale(ha, hh + off)),
-            'uniform': math3d.vadd(center, math3d.vscale(diag, math.hypot(hw, hh) + off*1.2)),
+            'x':       math3d.vadd(center, math3d.vscale((1, 0, 0), scale)),
+            'y':       math3d.vadd(center, math3d.vscale((0, 1, 0), scale)),
+            'z':       math3d.vadd(center, math3d.vscale((0, 0, 1), scale)),
+            'uniform': math3d.vadd(center, math3d.vscale(diag, scale * 0.6)),
         }
