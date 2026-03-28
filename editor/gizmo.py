@@ -6,24 +6,25 @@ which avoids circular imports.
 
 import math
 from OpenGL.GL import (
-    glBegin, glEnd, glVertex3f, glColor3f, glLineWidth,
-    glEnable, glDisable,
+    glBegin, glEnd, glVertex3f, glColor4f, glLineWidth,
+    glEnable, glDisable, glBlendFunc,
     GL_LINES, GL_TRIANGLE_FAN, GL_QUADS, GL_LINE_LOOP, GL_DEPTH_TEST,
+    GL_BLEND, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
 )
 
-from editor.constants import GIZMO_MODES, GIZMO_AXES, GIZMO_PLANES, SCALE_COLORS
+from editor.constants import GIZMO_MODES, GIZMO_AXES, GIZMO_PLANES, SCALE_COLORS, GIZMO_IDLE_ALPHA
 from editor import math3d
 
 
 # ── Drawing helpers (module-private) ──────────────────────────────────────────
-def _draw_arrow_3d(start, tip, color, selected=False):
+def _draw_arrow_3d(start, tip, color, selected=False, alpha=GIZMO_IDLE_ALPHA):
     r, g, b = (1.0, 0.9, 0.1) if selected else color
     length = math3d.vlength(math3d.vsub(tip, start))
     if length < 1e-10: return
     axis = math3d.normalize(math3d.vsub(tip, start))
     cone_base = math3d.vadd(start, math3d.vscale(axis, length*0.78))
     cone_r = length*0.08;  u, v = math3d.perp_basis(axis);  N = 10
-    glColor3f(r, g, b)
+    glColor4f(r, g, b, alpha)
     glLineWidth(2.5 if selected else 2.0)
     glBegin(GL_LINES); glVertex3f(*start); glVertex3f(*cone_base); glEnd()
     glLineWidth(1.0)
@@ -36,9 +37,9 @@ def _draw_arrow_3d(start, tip, color, selected=False):
     glEnd()
 
 
-def _draw_box_3d(pos, size, r, g, b):
+def _draw_box_3d(pos, size, r, g, b, alpha=GIZMO_IDLE_ALPHA):
     x, y, z = pos;  s = size/2
-    glColor3f(r, g, b)
+    glColor4f(r, g, b, alpha)
     glBegin(GL_QUADS)
     for face in [
         [(x-s,y-s,z+s),(x+s,y-s,z+s),(x+s,y+s,z+s),(x-s,y+s,z+s)],
@@ -52,12 +53,13 @@ def _draw_box_3d(pos, size, r, g, b):
     glEnd()
 
 
-def _draw_plane_squares(center, scale, active=None):
+def _draw_plane_squares(center, scale, active=None, hover_name=None):
     """Draw the three XY/XZ/YZ plane-handle squares at the base of the arrows."""
     offset = scale * 0.18
     half   = scale * 0.07
     for name, (a1, a2, _normal, color) in GIZMO_PLANES.items():
         r, g, b = (1.0, 0.9, 0.1) if name == active else color
+        alpha  = 1.0 if (name == active or name == hover_name) else GIZMO_IDLE_ALPHA
         sq_c = math3d.vadd(center, math3d.vadd(math3d.vscale(a1, offset),
                                                math3d.vscale(a2, offset)))
         corners = [
@@ -67,12 +69,12 @@ def _draw_plane_squares(center, scale, active=None):
             math3d.vadd(sq_c, math3d.vadd(math3d.vscale(a1, -half), math3d.vscale(a2,  half))),
         ]
         # filled face (dimmed)
-        glColor3f(r * 0.45, g * 0.45, b * 0.45)
+        glColor4f(r * 0.45, g * 0.45, b * 0.45, alpha)
         glBegin(GL_QUADS)
         for c in corners: glVertex3f(*c)
         glEnd()
         # outline
-        glColor3f(r, g, b)
+        glColor4f(r, g, b, alpha)
         glLineWidth(1.5)
         glBegin(GL_LINE_LOOP)
         for c in corners: glVertex3f(*c)
@@ -155,6 +157,26 @@ class Gizmo:
         # Universal mode: tracks which sub-transform is being dragged
         self._universal_sub_mode: str | None = None
 
+        # Hover state: axis/handle name under the cursor (None = nothing hovered)
+        self.hovered_axis: str | None = None
+
+    # ── Hover ─────────────────────────────────────────────────────────────────
+    def update_hover(self, mx, my, state, camera):
+        """Update hovered_axis based on current cursor position."""
+        if self.dragging_axis is not None:
+            self.hovered_axis = self.dragging_axis
+            return
+        if self.mode == 'translate':
+            self.hovered_axis = self.pick_translate_axis(mx, my, state, camera)
+        elif self.mode == 'rotate':
+            self.hovered_axis = self.pick_rotate_axis(mx, my, state, camera)
+        elif self.mode == 'scale':
+            self.hovered_axis = self.pick_scale_handle(mx, my, state, camera)
+        elif self.mode == 'universal':
+            self.hovered_axis = self.pick_universal_axis(mx, my, state, camera)
+        else:
+            self.hovered_axis = None
+
     # ── Mode ──────────────────────────────────────────────────────────────────
     def cycle_mode(self):
         self.mode = GIZMO_MODES[(GIZMO_MODES.index(self.mode) + 1) % len(GIZMO_MODES)]
@@ -200,19 +222,26 @@ class Gizmo:
 
     def _draw_translate(self, center, camera, active=None):
         scale = self._gizmo_scale(center, camera)
+        hov   = self.hovered_axis
         glDisable(GL_DEPTH_TEST)
-        _draw_plane_squares(center, scale, active)
+        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        _draw_plane_squares(center, scale, active, hover_name=hov)
         for name, (axis_dir, color) in GIZMO_AXES.items():
+            alpha = 1.0 if (name == active or name == hov) else GIZMO_IDLE_ALPHA
             _draw_arrow_3d(center, math3d.vadd(center, math3d.vscale(axis_dir, scale)),
-                           color, name == active)
+                           color, name == active, alpha=alpha)
+        glDisable(GL_BLEND)
         glEnable(GL_DEPTH_TEST)
 
     def _draw_rotate(self, center, camera, active=None):
         scale = self._gizmo_scale(center, camera);  N = 48
+        hov   = self.hovered_axis
         glDisable(GL_DEPTH_TEST)
+        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         for name, (axis_dir, color) in GIZMO_AXES.items():
             r, g, b = (1.0, 0.9, 0.1) if name == active else color
-            glColor3f(r, g, b);  glLineWidth(2.5 if name == active else 2.0)
+            alpha   = 1.0 if (name == active or name == hov) else GIZMO_IDLE_ALPHA
+            glColor4f(r, g, b, alpha);  glLineWidth(2.5 if name == active else 2.0)
             u, v = math3d.perp_basis(axis_dir)
             glBegin(GL_LINE_LOOP)
             for i in range(N):
@@ -221,19 +250,25 @@ class Gizmo:
                                                     math3d.vscale(v, scale*math.sin(a))))
                 glVertex3f(*p)
             glEnd()
+        glDisable(GL_BLEND)
         glLineWidth(1.0);  glEnable(GL_DEPTH_TEST)
 
     def _draw_scale(self, center, camera, active=None):
         scale = self._gizmo_scale(center, camera)
-        bs = scale * 0.1
+        bs    = scale * 0.1
+        hov   = self.hovered_axis
         handles = self._scale_handle_positions(center, camera)
-        glDisable(GL_DEPTH_TEST);  glLineWidth(2.0)
+        glDisable(GL_DEPTH_TEST)
+        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glLineWidth(2.0)
         for name, pos in handles.items():
             r, g, b = (1.0, 0.9, 0.1) if name == active else SCALE_COLORS[name]
-            glColor3f(r, g, b)
+            alpha   = 1.0 if (name == active or name == hov) else GIZMO_IDLE_ALPHA
+            glColor4f(r, g, b, alpha)
             glBegin(GL_LINES); glVertex3f(*center); glVertex3f(*pos); glEnd()
             box_s = bs * (1.5 if name == 'uniform' else 1.0) * (1.4 if name == active else 1.0)
-            _draw_box_3d(pos, box_s, r, g, b)
+            _draw_box_3d(pos, box_s, r, g, b, alpha=alpha)
+        glDisable(GL_BLEND)
         glLineWidth(1.0);  glEnable(GL_DEPTH_TEST)
 
     def _draw_universal(self, center, camera):
@@ -241,15 +276,18 @@ class Gizmo:
         rot_scale = scale * 0.7
         sub       = self._universal_sub_mode
         active_ax = self.dragging_axis
+        hov       = self.hovered_axis   # format: 'r:x', 't:y', 't:xy', …
 
         glDisable(GL_DEPTH_TEST)
+        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
         # Rotation rings (outer)
         N = 48
         for name, (axis_dir, color) in GIZMO_AXES.items():
             is_active = (sub == 'rotate' and name == active_ax)
-            r, g, b = (1.0, 0.9, 0.1) if is_active else color
-            glColor3f(r, g, b)
+            r, g, b   = (1.0, 0.9, 0.1) if is_active else color
+            alpha      = 1.0 if (is_active or hov == 'r:' + name) else GIZMO_IDLE_ALPHA
+            glColor4f(r, g, b, alpha)
             glLineWidth(2.5 if is_active else 1.5)
             u, v = math3d.perp_basis(axis_dir)
             glBegin(GL_LINE_LOOP)
@@ -263,15 +301,18 @@ class Gizmo:
 
         # Plane squares (translate)
         active_plane = active_ax if (sub == 'translate' and active_ax in GIZMO_PLANES) else None
-        _draw_plane_squares(center, scale, active_plane)
+        hover_plane  = hov[2:] if (hov and hov.startswith('t:') and hov[2:] in GIZMO_PLANES) else None
+        _draw_plane_squares(center, scale, active_plane, hover_name=hover_plane)
 
         # Translation arrows
         active_trans = active_ax if (sub == 'translate' and active_ax in GIZMO_AXES) else None
         for name, (axis_dir, color) in GIZMO_AXES.items():
+            alpha = 1.0 if (name == active_trans or hov == 't:' + name) else GIZMO_IDLE_ALPHA
             _draw_arrow_3d(center,
                            math3d.vadd(center, math3d.vscale(axis_dir, scale)),
-                           color, name == active_trans)
+                           color, name == active_trans, alpha=alpha)
 
+        glDisable(GL_BLEND)
         glLineWidth(1.0)
         glEnable(GL_DEPTH_TEST)
 

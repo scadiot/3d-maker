@@ -25,6 +25,8 @@ GIZMO_PLANES = {
     'yz': ((0, 1, 0), (0, 0, 1), (1, 0, 0), (0.2, 0.9, 0.9)),
 }
 
+GIZMO_IDLE_ALPHA = 0.4   # opacity of gizmo elements when not hovered
+
 SCALE_COLORS = {
     'x':       (1.0,  0.25, 0.25),
     'y':       (0.25, 1.0,  0.25),

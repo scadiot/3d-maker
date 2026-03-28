@@ -1619,6 +1619,9 @@ class App:
         elif self.state.gizmo_enable and self.gizmo.dragging_axis and self.mouse_btn1:
             self.gizmo.update_drag(self.mouse_x, self.mouse_y, self.state, self.camera)
 
+        if self.state.gizmo_enable:
+            self.gizmo.update_hover(self.mouse_x, self.mouse_y, self.state, self.camera)
+
         self.camera.apply_movement(self.keys_pressed, dt, panning=self.panning)
         self.view_cube.update(self.camera, dt)
         self._update_statusbar()
