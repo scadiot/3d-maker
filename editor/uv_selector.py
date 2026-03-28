@@ -264,6 +264,10 @@ class UVSelector(tk.Frame):
         self._drag_last_y      = 0
         self._uv_drag_vertex   = None
         self._uv_drag_before   = None
+        self._rect_drag_active  = False
+        self._rect_start_canvas = None   # (cx, cy) where rect drag began
+        self._rect_end_canvas   = None   # (cx, cy) current end
+        self._rect_before_uvs   = None   # {poly: uvs_list} backup before rect drag
         self._canvas_w         = PANEL_WIDTH
         self._canvas_h         = PANEL_WIDTH
         self._fit_w            = PANEL_WIDTH
@@ -291,6 +295,9 @@ class UVSelector(tk.Frame):
 
         self._glframe.bind('<Button-1>',        self._on_left_down)
         self._glframe.bind('<ButtonRelease-1>', self._on_left_up)
+        self._glframe.bind('<Alt-Button-1>',        self._on_alt_left_down)
+        self._glframe.bind('<Alt-B1-Motion>',       self._on_alt_motion)
+        self._glframe.bind('<Alt-ButtonRelease-1>', self._on_left_up)
         self._glframe.bind('<MouseWheel>',      self._on_wheel)
         self._glframe.bind('<Button-2>',        self._on_middle_down)
         self._glframe.bind('<ButtonRelease-2>', self._on_middle_up)
@@ -491,6 +498,39 @@ class UVSelector(tk.Frame):
                 glVertex2f(x, y)
             glEnd()
 
+        # ── Alt-rect drag overlay ─────────────────────────────────────────────
+        if self._rect_drag_active and self._rect_start_canvas and self._rect_end_canvas:
+            x0, y0 = self._rect_start_canvas
+            x1, y1 = self._rect_end_canvas
+            rx0, rx1 = min(x0, x1), max(x0, x1)
+            ry0, ry1 = min(y0, y1), max(y0, y1)
+            # Semi-transparent fill
+            glColor4f(0.2, 0.6, 1.0, 0.15)
+            glBegin(GL_QUADS)
+            glVertex2f(rx0, ry0)
+            glVertex2f(rx1, ry0)
+            glVertex2f(rx1, ry1)
+            glVertex2f(rx0, ry1)
+            glEnd()
+            # Bright border
+            glColor4f(0.2, 0.7, 1.0, 0.9)
+            glLineWidth(1.5)
+            glBegin(GL_LINE_LOOP)
+            glVertex2f(rx0, ry0)
+            glVertex2f(rx1, ry0)
+            glVertex2f(rx1, ry1)
+            glVertex2f(rx0, ry1)
+            glEnd()
+            # Corner dots
+            glColor4f(1.0, 1.0, 1.0, 0.9)
+            glPointSize(5.0)
+            glBegin(GL_POINTS)
+            glVertex2f(rx0, ry0)
+            glVertex2f(rx1, ry0)
+            glVertex2f(rx1, ry1)
+            glVertex2f(rx0, ry1)
+            glEnd()
+
     # ── Hit test ──────────────────────────────────────────────────────────────
     def _get_visible_uv_vertices(self):
         state = getattr(self._scene, '_state', None)
@@ -567,6 +607,22 @@ class UVSelector(tk.Frame):
                 state.notify_polygon_transformed([poly])
 
     # ── Left click / UV vertex drag ───────────────────────────────────────────
+    def _on_alt_left_down(self, event):
+        state = getattr(self._scene, '_state', None)
+        polys = state.selected_polygons if state else []
+        if polys:
+            self._rect_drag_active  = True
+            self._rect_start_canvas = (event.x, event.y)
+            self._rect_end_canvas   = (event.x, event.y)
+            self._rect_before_uvs   = {p: (list(p.vertices), list(p.uvs)) for p in polys}
+        return 'break'
+
+    def _on_alt_motion(self, event):
+        if self._rect_drag_active:
+            self._rect_end_canvas = (event.x, event.y)
+            self._apply_rect_uvs()
+        return 'break'
+
     def _on_left_down(self, event):
         hit = self._hit_uv_vertex(event.x, event.y)
         if hit is not None:
@@ -588,6 +644,17 @@ class UVSelector(tk.Frame):
             self._scene.assign_uv_at_atlas_pixel(atlas_x, atlas_y)
 
     def _on_left_up(self, event):
+        if self._rect_drag_active:
+            if self._rect_before_uvs is not None and self._on_uv_assigned:
+                state = getattr(self._scene, '_state', None)
+                polys = state.selected_polygons if state else []
+                after = {p: (list(p.vertices), list(p.uvs)) for p in polys}
+                self._on_uv_assigned(self._rect_before_uvs, after)
+            self._rect_drag_active  = False
+            self._rect_start_canvas = None
+            self._rect_end_canvas   = None
+            self._rect_before_uvs   = None
+            return
         if self._uv_drag_vertex is not None and self._uv_drag_before is not None:
             poly  = self._uv_drag_vertex[0]
             after = {poly: (list(poly.vertices), list(poly.uvs))}
@@ -595,6 +662,38 @@ class UVSelector(tk.Frame):
                 self._on_uv_assigned(self._uv_drag_before, after)
         self._uv_drag_vertex = None
         self._uv_drag_before = None
+
+    # ── Alt-rect UV mapping ───────────────────────────────────────────────────
+    def _apply_rect_uvs(self):
+        """Map the 4 corners of the current drag-rect to the selected polygon's UVs."""
+        if not self._rect_drag_active or self._rect_start_canvas is None:
+            return
+        state = getattr(self._scene, '_state', None)
+        if state is None:
+            return
+        polys = state.selected_polygons
+        if not polys:
+            return
+
+        x0, y0 = self._rect_start_canvas
+        x1, y1 = self._rect_end_canvas
+        u0, v0 = self._canvas_to_uv(x0, y0)
+        u1, v1 = self._canvas_to_uv(x1, y1)
+        u_min, u_max = min(u0, u1), max(u0, u1)
+        v_min, v_max = min(v0, v1), max(v0, v1)
+
+        # 4 corners in CW order starting top-left (high-v = top in UV space)
+        corners = [
+            (u_min, v_max),
+            (u_max, v_max),
+            (u_max, v_min),
+            (u_min, v_min),
+        ]
+
+        for poly in polys:
+            n = len(poly.uvs)
+            poly.uvs = [corners[i % 4] for i in range(n)]
+        state.notify_polygon_transformed(polys)
 
     # ── Utility ───────────────────────────────────────────────────────────────
     def _clamp_pan(self):
