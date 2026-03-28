@@ -438,7 +438,9 @@ class Gizmo:
 
     # ── Drag ─────────────────────────────────────────────────────────────────
     def start_drag(self, axis_or_handle, mx, my, state, camera):
-        if self.mode == 'universal':
+        if self.move_gizmo_mode:
+            self._start_move_gizmo_drag(axis_or_handle, mx, my, state, camera)
+        elif self.mode == 'universal':
             prefix, _, raw = axis_or_handle.partition(':')
             self._universal_sub_mode = {'t': 'translate', 'r': 'rotate', 's': 'scale'}[prefix]
             if self._universal_sub_mode == 'translate':
@@ -447,8 +449,6 @@ class Gizmo:
                 self._start_rotate_drag(raw, mx, my, state, camera)
             else:
                 self._start_scale_drag(raw, mx, my, state, camera)
-        elif self.move_gizmo_mode:
-            self._start_move_gizmo_drag(axis_or_handle, mx, my, state, camera)
         elif self.mode == 'translate':
             self._start_translate_drag(axis_or_handle, mx, my, state, camera)
         elif self.mode == 'rotate':
@@ -457,15 +457,15 @@ class Gizmo:
             self._start_scale_drag(axis_or_handle, mx, my, state, camera)
 
     def update_drag(self, mx, my, state, camera):
-        if self.mode == 'universal':
+        if self.move_gizmo_mode:
+            self._update_move_gizmo_drag(mx, my, state, camera)
+        elif self.mode == 'universal':
             if self._universal_sub_mode == 'translate':
                 self._update_translate_drag(mx, my, state, camera)
             elif self._universal_sub_mode == 'rotate':
                 self._update_rotate_drag(mx, my, state, camera)
             elif self._universal_sub_mode == 'scale':
                 self._update_scale_drag(mx, my, state, camera)
-        elif self.move_gizmo_mode:
-            self._update_move_gizmo_drag(mx, my, state, camera)
         elif self.mode == 'translate':
             self._update_translate_drag(mx, my, state, camera)
         elif self.mode == 'rotate':
@@ -499,6 +499,8 @@ class Gizmo:
 
     # ── Move-gizmo-only drag ──────────────────────────────────────────────────
     def _start_move_gizmo_drag(self, axis, mx, my, state, camera):
+        # strip universal-mode prefix (e.g. 't:x' → 'x')
+        _, _, axis = axis.partition(':')
         self.dragging_axis = axis
         center = self._get_center(state) or (0.0, 0.0, 0.0)
         self._move_gizmo_start_pos = center
