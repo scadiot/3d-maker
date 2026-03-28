@@ -631,8 +631,9 @@ class App:
         BG    = '#16161f'
         BG_ON = '#2d4080'
         extruding = self.state.extrusion_mode
+        move_gizmo = self.gizmo.move_gizmo_mode
         for mode, (btn, bg_off, bg_on) in self._gizmo_btns.items():
-            if extruding:
+            if extruding or (move_gizmo and mode in ('rotate', 'scale')):
                 btn.config(state='disabled', bg=self._BG_DIS, cursor='')
             else:
                 btn.config(state='normal', cursor='hand2',
@@ -882,7 +883,7 @@ class App:
         if key == 'c':
             self._cmd_duplicate()
 
-        if key == 'space' and (self.scene.selected_indices or self.state.selected_groups or self.state.selected_edges or self.state.selected_vertices) and not self.state.extrusion_mode:
+        if key == 'space' and (self.scene.selected_indices or self.state.selected_groups or self.state.selected_edges or self.state.selected_vertices) and not self.state.extrusion_mode and not self.gizmo.move_gizmo_mode:
             self.gizmo.cycle_mode()
             self._sync_gizmo_btns()
 
