@@ -249,12 +249,14 @@ class Scene:
         """Cyclically shifts the vertices and UVs of selected polygons (v0→v1, v1→v2, …)."""
         for poly in (self._state.selected_polygons if self._state else []):
             poly.vertices = [poly.vertices[-1]] + list(poly.vertices[:-1])
+        self._emit_scene_changed("polygon_transformed")
 
     def flip_orientation(self):
         """Reverses the orientation (normal) of selected polygons."""
         for poly in (self._state.selected_polygons if self._state else []):
             poly.vertices = list(reversed(poly.vertices))
             poly.uvs      = list(reversed(poly.uvs))
+        self._emit_scene_changed("polygon_transformed")
 
     def delete_selected(self):
         polys = self._state.selected_polygons if self._state else []
