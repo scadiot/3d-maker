@@ -413,9 +413,9 @@ class AppToolbarMixin:
         self._btn_create_from_edges = add_btn(self._cmd_create_from_edges,
                                               "Create polygon from edges")
         self._sep_split = tk.Frame(self.toolbar2, width=1, bg='#38384a')
-        self._btn_split = add_btn(self._cmd_split_polygon, "Split [K]")
+        self._btn_split = add_btn(self.split_tool.activate, "Split [K]")
         self._sep_extrude = tk.Frame(self.toolbar2, width=1, bg='#38384a')
-        self._btn_extrude = add_btn(self._cmd_start_extrusion, "Extrude")
+        self._btn_extrude = add_btn(self.extrude_tool.activate, "Extrude")
         self._sync_toolbar2_btns()
 
     def _on_snap_change(self, *_):
@@ -450,7 +450,7 @@ class AppToolbarMixin:
 
     def _on_selection_changed(self):
         if self.state.extrusion_mode and not self.state.selected_edges:
-            self._cmd_exit_extrusion(confirm=True)
+            self.extrude_tool.confirm()
             return
         self.gizmo.position_override = None
         self.gizmo.move_gizmo_mode   = False

@@ -6,11 +6,10 @@ from tkinter import messagebox
 
 from pyopengltk import OpenGLFrame
 from OpenGL.GL import (
-    glEnable, glDisable, glClearColor, glClear, glViewport,
+    glEnable, glClearColor, glClear, glViewport,
     glMatrixMode, glLoadIdentity, glRotatef, glTranslatef,
-    glColor3f, glBegin, glEnd, glVertex3f, glLineWidth,
     GL_DEPTH_TEST, GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT,
-    GL_PROJECTION, GL_MODELVIEW, GL_LINES,
+    GL_PROJECTION, GL_MODELVIEW,
 )
 from OpenGL.GL import glOrtho
 from OpenGL.GLU import gluPerspective
@@ -24,14 +23,14 @@ from editor.renderer      import draw_grid
 from editor.state_manager import StateManager
 from editor.history       import HistoryManager
 
-from editor.app_toolbar     import AppToolbarMixin
-from editor.app_layout      import AppLayoutMixin
-from editor.app_events      import AppEventsMixin
-from editor.app_selection   import AppSelectionMixin
-from editor.app_commands    import AppCommandsMixin
-from editor.app_split_tool  import AppSplitToolMixin
-from editor.app_extrude_tool import AppExtrudeMixin
-from editor.app_file        import AppFileMixin
+from editor.app_toolbar   import AppToolbarMixin
+from editor.app_layout    import AppLayoutMixin
+from editor.app_events    import AppEventsMixin
+from editor.app_selection import AppSelectionMixin
+from editor.app_commands  import AppCommandsMixin
+from editor.app_file      import AppFileMixin
+from editor.split_tool    import SplitTool
+from editor.extrude_tool  import ExtrudeTool
 
 
 class Viewport3D(OpenGLFrame):
@@ -50,8 +49,7 @@ class Viewport3D(OpenGLFrame):
 
 
 class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
-          AppSelectionMixin, AppCommandsMixin,
-          AppSplitToolMixin, AppExtrudeMixin, AppFileMixin):
+          AppSelectionMixin, AppCommandsMixin, AppFileMixin):
 
     def __init__(self):
         self.camera         = Camera()
@@ -80,16 +78,9 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
         self.mouse_y           = 0
         self.last_time         = time.time()
         self._viewport_focused = False
-        # ── Extrusion mode state ──────────────────────────────────────────────
-        self._extrude_prev_gizmo_mode  = 'universal'
-        self._extrude_history_depth    = 0
-        # ── Polygon-split drag state ──────────────────────────────────────────
-        self._split_polygon    = None
-        self._split_dir        = None
-        self._split_perp       = None
-        self._split_origin     = None
-        self._split_seg        = None
-        self._splitting_active = False
+        # ── Tools ─────────────────────────────────────────────────────────────
+        self.split_tool   = SplitTool(self)
+        self.extrude_tool = ExtrudeTool(self)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
     def run(self):
@@ -143,8 +134,8 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
         dt  = now - self.last_time
         self.last_time = now
 
-        if self.state.polygon_splitting_mode and self._splitting_active and self.mouse_btn1:
-            self._update_polygon_split(self.mouse_x, self.mouse_y)
+        if self.state.polygon_splitting_mode:
+            self.split_tool.update(self.mouse_x, self.mouse_y)
         elif self.state.gizmo_enable and self.gizmo.dragging_axis and self.mouse_btn1:
             self.gizmo.update_drag(self.mouse_x, self.mouse_y, self.state, self.camera)
 
@@ -182,15 +173,5 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
             self.gizmo.draw(self.state, self.camera)
         self.view_cube.draw(self.camera, vw, vh)
 
-        # ── Split segment overlay ──────────────────────────────────────────
-        if self.state.polygon_splitting_mode and self._split_seg is not None:
-            pt_a, pt_b = self._split_seg
-            glDisable(GL_DEPTH_TEST)
-            glLineWidth(2.5)
-            glColor3f(0.6, 0.1, 1.0)
-            glBegin(GL_LINES)
-            glVertex3f(*pt_a)
-            glVertex3f(*pt_b)
-            glEnd()
-            glLineWidth(1.0)
-            glEnable(GL_DEPTH_TEST)
+        # ── Tool overlays ──────────────────────────────────────────────────
+        self.split_tool.draw()

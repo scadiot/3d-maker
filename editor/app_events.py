@@ -32,7 +32,7 @@ class AppEventsMixin:
 
     def _on_mouse_up(self, event):
         self.mouse_btn1 = False
-        self._splitting_active = False
+        self.split_tool.on_mouse_up(event.x, event.y)
         self.gizmo.finish_drag(self.history, self.state)
 
     def _on_mouse_wheel(self, event):
@@ -122,19 +122,19 @@ class AppEventsMixin:
             one_poly = (self.state.selection_mode == 'polygon'
                         and len(self.state.selected_polygons) == 1)
             if one_poly and self._poly_is_coplanar(self.state.selected_polygons[0]):
-                self._cmd_split_polygon()
+                self.split_tool.activate()
 
         if key == 'return':
             if self.state.polygon_splitting_mode:
-                self._cmd_confirm_polygon_split()
+                self.split_tool.confirm()
             elif self.state.extrusion_mode:
-                self._cmd_exit_extrusion(confirm=True)
+                self.extrude_tool.confirm()
 
         if key == 'escape':
             if self.state.polygon_splitting_mode:
-                self._cmd_split_polygon_escape()
+                self.split_tool.cancel()
             elif self.state.extrusion_mode:
-                self._cmd_exit_extrusion(confirm=False)
+                self.extrude_tool.cancel()
             else:
                 self.state.clear_selection()
 
