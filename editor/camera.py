@@ -8,11 +8,13 @@ from editor import math3d
 
 class Camera:
     def __init__(self):
-        self.pos   = [0.0, 3.0, 8.0]
-        self.yaw   = 0.0
-        self.pitch = -20.0
-        self.vw    = VIEW_WIDTH
-        self.vh    = HEIGHT
+        self.pos         = [0.0, 3.0, 8.0]
+        self.yaw         = 0.0
+        self.pitch       = -20.0
+        self.vw          = VIEW_WIDTH
+        self.vh          = HEIGHT
+        self.ortho       = False
+        self.ortho_scale = 5.0  # half-height of ortho frustum in world units
 
     # ── Directions ────────────────────────────────────────────────────────────
     def forward_xz(self):
@@ -37,6 +39,10 @@ class Camera:
         cx2 = tx*cy - tz*sy;  cy2 = ty;  cz2 = tx*sy + tz*cy
         pr = math.radians(self.pitch);  cp, sp = math.cos(pr), math.sin(pr)
         cx3 = cx2;  cy3 = cy2*cp + cz2*sp;  cz3 = -cy2*sp + cz2*cp
+        if self.ortho:
+            if cz3 >= 0: return None
+            h = self.ortho_half_h();  w = h * (self.vw / self.vh)
+            return ((cx3 / w + 1) / 2 * self.vw, (1 - cy3 / h) / 2 * self.vh)
         if cz3 >= -1e-4: return None
         aspect = self.vw / self.vh;  t = math.tan(math.radians(FOV / 2))
         return ((cx3/(-cz3*aspect*t)+1)/2*self.vw, (1 - cy3/(-cz3*t))/2*self.vh)
@@ -52,26 +58,63 @@ class Camera:
         yr = math.radians(self.yaw);  cy, sy = math.cos(yr), math.sin(yr)
         return math3d.normalize((rx1*cy + rz1*sy, ry1, -rx1*sy + rz1*cy))
 
+    def ortho_half_h(self):
+        """Half-height of the orthographic frustum."""
+        return max(self.ortho_scale, 0.1)
+
+    def pick_ray(self, vx, vy):
+        """Return (origin, direction) for a picking ray in perspective or ortho mode."""
+        if not self.ortho:
+            return tuple(self.pos), self.screen_ray(vx, vy)
+        # Ortho: parallel rays, origin offset in the camera plane
+        aspect = self.vw / self.vh
+        h = self.ortho_half_h()
+        w = h * aspect
+        cam_x = ((2*vx/self.vw) - 1) * w
+        cam_y = (1 - (2*vy/self.vh)) * h
+        right = self.right_xz()
+        up    = self.up_vector()
+        ox = self.pos[0] + cam_x*right[0] + cam_y*up[0]
+        oy = self.pos[1] + cam_x*right[1] + cam_y*up[1]
+        oz = self.pos[2] + cam_x*right[2] + cam_y*up[2]
+        return (ox, oy, oz), self.screen_ray(self.vw / 2, self.vh / 2)
+
     # ── Input ─────────────────────────────────────────────────────────────────
     def apply_movement(self, keys, dt, panning=False):
         """keys: set of lowercase Tkinter keysyms (e.g. {'z', 'd'}).
-        panning: when True, Z/S move forward/backward; otherwise Z/S move vertically."""
+        In ortho mode: R/F zoom (scale frustum), Q/D pan horizontal, Z/S pan vertical.
+        In perspective mode: Z/S fly forward/backward, Q/D strafe, R/F fly up/down."""
         speed = MOVE_SPEED * dt
-        fwd, rgt = self.forward_xz(), self.right_xz()
-        if 'z' in keys: self.pos[0] -= fwd[0]*speed; self.pos[1] += fwd[1]*speed; self.pos[2] -= fwd[2]*speed
-        if 's' in keys: self.pos[0] += fwd[0]*speed; self.pos[1] -= fwd[1]*speed; self.pos[2] += fwd[2]*speed
-        if 'q' in keys: self.pos[0] -= rgt[0]*speed; self.pos[2] -= rgt[2]*speed
-        if 'd' in keys: self.pos[0] += rgt[0]*speed; self.pos[2] += rgt[2]*speed
-        up = self.up_vector()
-        if 'r' in keys: self.pos[0] += up[0]*speed; self.pos[1] += up[1]*speed; self.pos[2] += up[2]*speed
-        if 'f' in keys: self.pos[0] -= up[0]*speed; self.pos[1] -= up[1]*speed; self.pos[2] -= up[2]*speed
+        if self.ortho:
+            rgt = self.right_xz()
+            pan = speed * self.ortho_scale * 0.5  # pan speed proportional to zoom level
+            if 'r' in keys: self.ortho_scale = max(0.1, self.ortho_scale * (1 - speed * 0.5))
+            if 'f' in keys: self.ortho_scale *= (1 + speed * 0.5)
+            if 'q' in keys: self.pos[0] -= rgt[0]*pan; self.pos[2] -= rgt[2]*pan
+            if 'd' in keys: self.pos[0] += rgt[0]*pan; self.pos[2] += rgt[2]*pan
+            up = self.up_vector()
+            if 'z' in keys: self.pos[0] += up[0]*pan; self.pos[1] += up[1]*pan; self.pos[2] += up[2]*pan
+            if 's' in keys: self.pos[0] -= up[0]*pan; self.pos[1] -= up[1]*pan; self.pos[2] -= up[2]*pan
+        else:
+            fwd, rgt = self.forward_xz(), self.right_xz()
+            if 'z' in keys: self.pos[0] -= fwd[0]*speed; self.pos[1] += fwd[1]*speed; self.pos[2] -= fwd[2]*speed
+            if 's' in keys: self.pos[0] += fwd[0]*speed; self.pos[1] -= fwd[1]*speed; self.pos[2] += fwd[2]*speed
+            if 'q' in keys: self.pos[0] -= rgt[0]*speed; self.pos[2] -= rgt[2]*speed
+            if 'd' in keys: self.pos[0] += rgt[0]*speed; self.pos[2] += rgt[2]*speed
+            up = self.up_vector()
+            if 'r' in keys: self.pos[0] += up[0]*speed; self.pos[1] += up[1]*speed; self.pos[2] += up[2]*speed
+            if 'f' in keys: self.pos[0] -= up[0]*speed; self.pos[1] -= up[1]*speed; self.pos[2] -= up[2]*speed
 
     def apply_mouse_look(self, dx, dy):
         self.yaw   = (self.yaw   - dx * MOUSE_SENSITIVITY) % 360.0
         self.pitch = max(-89.0, min(89.0, self.pitch - dy * MOUSE_SENSITIVITY))
 
     def apply_scroll(self, delta):
-        """Moves the camera forward/backward based on mouse wheel scroll."""
+        """Zoom ortho frustum or fly forward/backward in perspective."""
+        if self.ortho:
+            factor = 0.9 if delta > 0 else 1.1
+            self.ortho_scale = max(0.1, self.ortho_scale * factor)
+            return
         fwd = self.forward_xz()
         speed = MOVE_SPEED * 0.1 * delta
         self.pos[0] -= fwd[0] * speed

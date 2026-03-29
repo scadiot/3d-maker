@@ -15,6 +15,7 @@ from OpenGL.GL import (
     GL_DEPTH_TEST, GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT,
     GL_PROJECTION, GL_MODELVIEW, GL_LINES,
 )
+from OpenGL.GL import glOrtho
 from OpenGL.GLU import gluPerspective
 
 from editor.constants import (PANEL_WIDTH, VIEW_WIDTH, HEIGHT,
@@ -82,6 +83,7 @@ class App:
         self._right_resize_start_x = 0
         self._right_resize_start_pw = PANEL_WIDTH
         self._btn_move_gizmo   = None
+        self._btn_ortho        = None
         self.history           = HistoryManager()
         self.keys_pressed      = set()
         self.mouse_btn1        = False
@@ -508,6 +510,19 @@ class App:
                                       "Grid snap")
         self._btn_vertex_glue = add_btn(make_icon(ico_vertex_glue), self._toggle_vertex_glue,
                                         "Vertex Glue", "V")
+        add_sep()
+
+        def ico_ortho(d, s, c):
+            # Two parallel horizontal lines (orthographic = parallel projection)
+            m = s // 2
+            for y in [m - 4, m + 4]:
+                d.line([3, y, s - 3, y], fill=c, width=2)
+            # Vertical tick marks at ends
+            for x in [3, s - 3]:
+                d.line([x, m - 6, x, m + 6], fill=c, width=1)
+
+        self._btn_ortho = add_btn(make_icon(ico_ortho), self._toggle_ortho,
+                                  "Orthographic view")
 
     # ── Second toolbar ────────────────────────────────────────────────────────
     def _build_toolbar2(self):
@@ -563,6 +578,14 @@ class App:
     def _toggle_vertex_glue(self):
         self.state.vertex_glue = not self.state.vertex_glue
         self._btn_vertex_glue.config(bg='#2d4080' if self.state.vertex_glue else '#16161f')
+
+    def _toggle_ortho(self):
+        self.camera.ortho = not self.camera.ortho
+        if self.camera.ortho:
+            # Initialise ortho_scale to match the current perspective view depth
+            dist = math.sqrt(sum(p**2 for p in self.camera.pos))
+            self.camera.ortho_scale = max(dist * math.tan(math.radians(FOV / 2)), 0.1)
+        self._btn_ortho.config(bg='#2d4080' if self.camera.ortho else '#16161f')
 
     def _toggle_move_gizmo_mode(self):
         if self.gizmo.move_gizmo_mode:
@@ -892,7 +915,7 @@ class App:
         if key == 'h' and self.scene.selected_indices:
             self._cmd_ungroup()
 
-        if key == 'r' and self.scene.selected_indices:
+        if key == 'r' and self.scene.selected_indices and not self.camera.ortho:
             self._cmd_rotate_vertices()
 
         if key == 'n' and self.scene.selected_indices:
@@ -1118,8 +1141,7 @@ class App:
     def _start_polygon_split(self, mx, my):
         """Begin a polygon-split drag: create a blue segment parallel to the
         nearest edge of the polygon under the cursor."""
-        ray_o = tuple(self.camera.pos)
-        ray_d = self.camera.screen_ray(mx, my)
+        ray_o, ray_d = self.camera.pick_ray(mx, my)
 
         poly_idx = self.scene.pick_polygon(ray_o, ray_d)
         if poly_idx < 0:
@@ -1192,9 +1214,8 @@ class App:
         if len(verts) < 3:
             return
         normal = normalize(cross(vsub(verts[1], verts[0]), vsub(verts[2], verts[0])))
-        hit = ray_plane_intersect(
-            tuple(self.camera.pos), self.camera.screen_ray(mx, my), verts[0], normal
-        )
+        ray_o, ray_d = self.camera.pick_ray(mx, my)
+        hit = ray_plane_intersect(ray_o, ray_d, verts[0], normal)
         if hit is None:
             return
         pv = dot(vsub(hit, self._split_origin), self._split_perp)
@@ -1499,16 +1520,20 @@ class App:
             self._update_title()
 
     def _pick_polygon(self, mx, my):
-        return self.scene.pick_polygon(tuple(self.camera.pos), self.camera.screen_ray(mx, my))
+        ro, rd = self.camera.pick_ray(mx, my)
+        return self.scene.pick_polygon(ro, rd)
 
     def _pick_edge(self, mx, my):
-        return self.scene.pick_edge(tuple(self.camera.pos), self.camera.screen_ray(mx, my))
+        ro, rd = self.camera.pick_ray(mx, my)
+        return self.scene.pick_edge(ro, rd)
 
     def _pick_vertex(self, mx, my):
-        return self.scene.pick_vertex(tuple(self.camera.pos), self.camera.screen_ray(mx, my))
+        ro, rd = self.camera.pick_ray(mx, my)
+        return self.scene.pick_vertex(ro, rd)
 
     def _pick_locked_group(self, mx, my):
-        return self.scene.pick_locked_group(tuple(self.camera.pos), self.camera.screen_ray(mx, my))
+        ro, rd = self.camera.pick_ray(mx, my)
+        return self.scene.pick_locked_group(ro, rd)
 
     def _apply_locked_group_selection(self, group, shift_held):
         current = list(self.state.selected_groups)
@@ -1636,7 +1661,12 @@ class App:
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glViewport(0, 0, vw, vh)
         glMatrixMode(GL_PROJECTION); glLoadIdentity()
-        gluPerspective(FOV, vw / vh, NEAR, FAR)
+        if self.camera.ortho:
+            h = self.camera.ortho_half_h()
+            w = h * (vw / vh)
+            glOrtho(-w, w, -h, h, NEAR, FAR)
+        else:
+            gluPerspective(FOV, vw / vh, NEAR, FAR)
         glMatrixMode(GL_MODELVIEW);  glLoadIdentity()
         glRotatef(-self.camera.pitch, 1, 0, 0)
         glRotatef(-self.camera.yaw,   0, 1, 0)

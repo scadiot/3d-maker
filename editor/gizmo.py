@@ -477,9 +477,9 @@ class Gizmo:
     def _get_move(self, mx, my, center, camera):
         """Return the 3-D move vector for the current drag, handling both axis
         and plane modes.  Returns None if a plane ray cast misses."""
+        ro, rd = camera.pick_ray(mx, my)
         if self.dragging_axis in GIZMO_PLANES:
-            hit = math3d.ray_plane_intersect(tuple(camera.pos),
-                                             camera.screen_ray(mx, my),
+            hit = math3d.ray_plane_intersect(ro, rd,
                                              self.drag_plane_hit0,
                                              self.drag_plane_normal)
             if hit is None:
@@ -492,9 +492,7 @@ class Gizmo:
             return math3d.vadd(math3d.vscale(a1, s1), math3d.vscale(a2, s2))
         else:
             axis_dir = GIZMO_AXES[self.dragging_axis][0]
-            t = math3d.ray_line_closest_s(tuple(camera.pos),
-                                          camera.screen_ray(mx, my),
-                                          center, axis_dir)
+            t = math3d.ray_line_closest_s(ro, rd, center, axis_dir)
             return self._snap_move(t - self.drag_axis_t0, center, axis_dir)
 
     # ── Move-gizmo-only drag ──────────────────────────────────────────────────
@@ -504,16 +502,14 @@ class Gizmo:
         self.dragging_axis = axis
         center = self._get_center(state) or (0.0, 0.0, 0.0)
         self._move_gizmo_start_pos = center
+        ro, rd = camera.pick_ray(mx, my)
         if axis in GIZMO_PLANES:
             _, _, normal, _ = GIZMO_PLANES[axis]
-            hit = math3d.ray_plane_intersect(tuple(camera.pos),
-                                             camera.screen_ray(mx, my),
-                                             center, normal)
+            hit = math3d.ray_plane_intersect(ro, rd, center, normal)
             self.drag_plane_hit0   = hit if hit is not None else center
             self.drag_plane_normal = normal
         else:
-            self.drag_axis_t0 = math3d.ray_line_closest_s(
-                tuple(camera.pos), camera.screen_ray(mx, my),
+            self.drag_axis_t0 = math3d.ray_line_closest_s(ro, rd,
                 center, GIZMO_AXES[axis][0])
 
     def _update_move_gizmo_drag(self, mx, my, state, camera):
@@ -633,16 +629,14 @@ class Gizmo:
             for poly in {p for p, _ in glued}:
                 if poly not in self.drag_before_snapshot:
                     self.drag_before_snapshot[poly] = list(poly.vertices)
+        ro, rd = camera.pick_ray(mx, my)
         if axis in GIZMO_PLANES:
             _, _, normal, _ = GIZMO_PLANES[axis]
-            hit = math3d.ray_plane_intersect(tuple(camera.pos),
-                                             camera.screen_ray(mx, my),
-                                             center, normal)
+            hit = math3d.ray_plane_intersect(ro, rd, center, normal)
             self.drag_plane_hit0   = hit if hit is not None else center
             self.drag_plane_normal = normal
         else:
-            self.drag_axis_t0 = math3d.ray_line_closest_s(
-                tuple(camera.pos), camera.screen_ray(mx, my),
+            self.drag_axis_t0 = math3d.ray_line_closest_s(ro, rd,
                 center, GIZMO_AXES[axis][0])
 
     def _update_translate_drag(self, mx, my, state, camera):
@@ -748,9 +742,8 @@ class Gizmo:
         self.drag_center  = self._get_center(state) or (0.0, 0.0, 0.0)
         axis_dir          = GIZMO_AXES[axis][0]
         self.drag_plane_u, self.drag_plane_v = math3d.perp_basis(axis_dir)
-        hit = math3d.ray_plane_intersect(tuple(camera.pos),
-                                         camera.screen_ray(mx, my),
-                                         self.drag_center, axis_dir)
+        ro, rd = camera.pick_ray(mx, my)
+        hit = math3d.ray_plane_intersect(ro, rd, self.drag_center, axis_dir)
         self.drag_angle0 = (math3d.angle_on_plane(hit, self.drag_center,
                                                    self.drag_plane_u, self.drag_plane_v)
                             if hit else 0.0)
@@ -760,9 +753,8 @@ class Gizmo:
                      or self.drag_start_vertex_verts)
         if self.dragging_axis is None or not has_verts: return
         axis_dir = GIZMO_AXES[self.dragging_axis][0]
-        hit = math3d.ray_plane_intersect(tuple(camera.pos),
-                                         camera.screen_ray(mx, my),
-                                         self.drag_center, axis_dir)
+        ro, rd = camera.pick_ray(mx, my)
+        hit = math3d.ray_plane_intersect(ro, rd, self.drag_center, axis_dir)
         if hit is None: return
         angle = math3d.angle_on_plane(hit, self.drag_center, self.drag_plane_u, self.drag_plane_v)
         step  = math.radians(45)
@@ -847,7 +839,7 @@ class Gizmo:
                         self.drag_before_snapshot[poly] = list(poly.vertices)
         self.drag_center = self._get_center(state) or (0.0, 0.0, 0.0)
         axis_dir = _scale_axis_dir(handle)
-        ray_o = tuple(camera.pos);  ray_d = camera.screen_ray(mx, my)
+        ray_o, ray_d = camera.pick_ray(mx, my)
         self.drag_axis_t0 = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, axis_dir)
 
     def _update_scale_drag(self, mx, my, state, camera):
@@ -856,7 +848,7 @@ class Gizmo:
         if self.dragging_axis is None or not has_verts or self.drag_center is None:
             return
         axis_dir = _scale_axis_dir(self.dragging_axis)
-        ray_o = tuple(camera.pos);  ray_d = camera.screen_ray(mx, my)
+        ray_o, ray_d = camera.pick_ray(mx, my)
         t  = math3d.ray_line_closest_s(ray_o, ray_d, self.drag_center, axis_dir)
         t0 = self.drag_axis_t0
         if abs(t0) < 1e-6: return
