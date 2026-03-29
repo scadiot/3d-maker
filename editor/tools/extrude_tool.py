@@ -1,8 +1,8 @@
 """ExtrudeTool: edge extrusion tool."""
 
-from editor.tool import Tool
-from editor.group import Polygon
-from editor.history import ExtrudeEdgesCommand
+from editor.tools.tool import Tool
+from editor.core.group import Polygon
+from editor.core.history import ExtrudeEdgesCommand
 
 
 class ExtrudeTool(Tool):

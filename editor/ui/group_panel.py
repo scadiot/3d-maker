@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 
-from editor.group import Group, Polygon, all_polygons, is_visible, is_locked
+from editor.core.group import Group, Polygon, all_polygons, is_visible, is_locked
 
 
 class _Tooltip:
@@ -296,7 +296,7 @@ class GroupPanel(tk.Frame):
             new_group = self._state.add_group('Group', parent_group)
             history = getattr(self._app, 'history', None)
             if history is not None:
-                from editor.history import AddGroupCommand
+                from editor.core.history import AddGroupCommand
                 history.record(AddGroupCommand(self._state, new_group, parent_group))
         else:
             parent_group.add_group('Group')
@@ -335,7 +335,7 @@ class GroupPanel(tk.Frame):
         if self._state is not None:
             history = getattr(self._app, 'history', None)
             if history is not None:
-                from editor.history import (DeleteGroupCommand, DeletePolygonsCommand,
+                from editor.core.history import (DeleteGroupCommand, DeletePolygonsCommand,
                                             CompoundCommand)
                 cmds = [DeleteGroupCommand(self._state, g) for g in groups_to_del]
                 if polys_to_del:
@@ -457,7 +457,7 @@ class GroupPanel(tk.Frame):
                     continue
                 if self._state is not None:
                     if history is not None:
-                        from editor.history import MoveGroupCommand
+                        from editor.core.history import MoveGroupCommand
                         old_parent = drag_obj.parent
                         move_cmds.append(MoveGroupCommand(self._state, drag_obj,
                                                           old_parent, target_group))
@@ -471,7 +471,7 @@ class GroupPanel(tk.Frame):
                     continue
                 if self._state is not None:
                     if history is not None:
-                        from editor.history import MovePolygonCommand
+                        from editor.core.history import MovePolygonCommand
                         old_group = drag_obj.group
                         move_cmds.append(MovePolygonCommand(self._state, drag_obj,
                                                             old_group, target_group))
@@ -482,7 +482,7 @@ class GroupPanel(tk.Frame):
                 moved = True
 
         if move_cmds:
-            from editor.history import CompoundCommand
+            from editor.core.history import CompoundCommand
             history.push(CompoundCommand(move_cmds) if len(move_cmds) > 1 else move_cmds[0])
         elif moved and self._state is None:
             self.refresh()
@@ -596,7 +596,7 @@ class GroupPanel(tk.Frame):
                     old_name = group.name
                     history = getattr(self._app, 'history', None)
                     if history is not None:
-                        from editor.history import RenameGroupCommand
+                        from editor.core.history import RenameGroupCommand
                         history.push(RenameGroupCommand(self._state, group,
                                                         old_name, new_name))
                     else:
@@ -759,7 +759,7 @@ class GroupPanel(tk.Frame):
                 if obj.parent is target_group:
                     continue
                 if self._state is not None and history is not None:
-                    from editor.history import MoveGroupCommand
+                    from editor.core.history import MoveGroupCommand
                     move_cmds.append(MoveGroupCommand(self._state, obj,
                                                       obj.parent, target_group))
                 elif self._state is not None:
@@ -770,7 +770,7 @@ class GroupPanel(tk.Frame):
                 if obj.group is target_group:
                     continue
                 if self._state is not None and history is not None:
-                    from editor.history import MovePolygonCommand
+                    from editor.core.history import MovePolygonCommand
                     move_cmds.append(MovePolygonCommand(self._state, obj,
                                                         obj.group, target_group))
                 elif self._state is not None:
@@ -779,7 +779,7 @@ class GroupPanel(tk.Frame):
                     target_group.adopt_polygon(obj)
 
         if move_cmds:
-            from editor.history import CompoundCommand
+            from editor.core.history import CompoundCommand
             history.push(CompoundCommand(move_cmds) if len(move_cmds) > 1 else move_cmds[0])
         elif self._state is None:
             self.refresh()

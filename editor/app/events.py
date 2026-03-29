@@ -2,7 +2,7 @@
 
 import ctypes
 
-from editor.constants import SNAP_VALUES
+from editor.utils.constants import SNAP_VALUES
 
 
 class AppEventsMixin:

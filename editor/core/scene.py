@@ -24,9 +24,10 @@ from OpenGL.GL import (
     GL_TRIANGLES, GL_LINES, GL_POINTS,
 )
 
-from editor.texture_atlas import TextureAtlas
-from editor import math3d, serializer
-from editor.group import Group, all_polygons, iter_polygons, is_visible, is_locked, iter_ancestors
+from editor.utils.texture_atlas import TextureAtlas
+from editor.utils import math3d
+from editor.utils import serializer
+from editor.core.group import Group, all_polygons, iter_polygons, is_visible, is_locked, iter_ancestors
 
 
 # ── Flat views (compatibility with gizmo.py and the rest) ─────────────────────

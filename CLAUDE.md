@@ -29,20 +29,41 @@ python main.py
 The project is a modular 3D polygon editor split into multiple Python modules under `editor/`.
 
 ```
-main.py                    # Entry point (~9 lines): instantiates App and calls run()
+main.py                         # Entry point: instantiates App and calls run()
 editor/
-├── app.py                 # Main App class (1022 lines): window, menu, toolbar, event loop
-├── scene.py               # Scene management, polygon ops, picking, save/load JSON
-├── group_panel.py         # Hierarchical tree UI (drag-drop, visibility toggles)
-├── gizmo.py               # Transform gizmo (translate/rotate/scale)
-├── history.py             # Undo/redo via Command Pattern
-├── state_manager.py       # Centralized state + observer/event system
-├── uv_selector.py         # Interactive texture atlas widget
-├── group.py               # Data structures: Polygon, Group, traversal helpers
-├── camera.py              # Camera state, projection, ray casting
-├── math3d.py              # Pure vector math & ray intersections
-├── renderer.py            # Stateless grid renderer
-└── constants.py           # Window dimensions, FOV, gizmo config, asset paths
+├── app/
+│   ├── app.py                  # Main App class: window, menu, toolbar, event loop
+│   ├── commands.py             # Keyboard/menu command handlers
+│   ├── events.py               # Mouse/keyboard event dispatching
+│   ├── file.py                 # Save/load file operations
+│   ├── layout.py               # Tkinter layout & widget creation
+│   ├── selection.py            # Selection logic
+│   └── toolbar.py              # Toolbar construction
+├── core/
+│   ├── group.py                # Data structures: Polygon, Group, traversal helpers
+│   ├── history.py              # Undo/redo via Command Pattern
+│   ├── scene.py                # Scene management, polygon ops, picking
+│   └── state_manager.py        # Centralized state + observer/event system
+├── render/
+│   ├── camera.py               # Camera state, projection, ray casting
+│   ├── gizmo.py                # Transform gizmo (translate/rotate/scale)
+│   ├── renderer.py             # Stateless grid renderer
+│   └── view_cube.py            # View orientation cube
+├── tools/
+│   ├── tool.py                 # Base Tool class
+│   ├── extrude_tool.py         # Extrude polygon tool
+│   └── split_tool.py           # Split polygon tool
+├── ui/
+│   ├── gizmo_position_panel.py # Gizmo position/transform panel
+│   ├── group_panel.py          # Hierarchical tree UI (drag-drop, visibility toggles)
+│   ├── project_info_dialog.py  # Project info dialog
+│   ├── texture_atlas_dialog.py # Texture atlas dialog
+│   └── uv_selector.py          # Interactive texture atlas widget
+└── utils/
+    ├── constants.py            # Window dimensions, FOV, gizmo config, asset paths
+    ├── math3d.py               # Pure vector math & ray intersections
+    ├── serializer.py           # JSON save/load helpers
+    └── texture_atlas.py        # Texture atlas loading
 ```
 
 ---
@@ -86,7 +107,7 @@ state.subscribe("selection_changed", lambda **kw: ...)
 
 ## Modules in Detail
 
-### `app.py` — Main controller
+### `app/app.py` — Main controller
 - Creates Tkinter window, menu bar, two toolbars, left panel, OpenGL viewport
 - Owns the main frame loop (via Tkinter's `after`)
 - Dispatches mouse/keyboard events to `Scene`, `Gizmo`, `Camera`
@@ -94,13 +115,12 @@ state.subscribe("selection_changed", lambda **kw: ...)
 - **Toolbar 2**: Gizmo mode selector, snap sliders, selection mode toggle
 - Left panel: `GroupPanel` (tree) + `UVSelector` (atlas preview), resizable via drag separator
 
-### `scene.py` — Scene state
+### `core/scene.py` — Scene state
 - Stores polygon list; wraps `StateManager` for mutations
 - `pick_polygon(ray)` / `pick_edge(ray)` / `pick_vertex(ray)` — ray cast selection
 - `draw()` — OpenGL polygon rendering (textured faces, edge outlines, selection highlights)
-- `save_json()` / `load_json()` — hierarchical JSON format; supports legacy flat format
 
-### `gizmo.py` — Transform gizmo (464 lines)
+### `render/gizmo.py` — Transform gizmo
 Three modes (cycle with **Space**):
 1. **Translate** — move along X/Y/Z axes
 2. **Rotate** — rotate around center point
@@ -111,22 +131,22 @@ State machine per drag:
 - Mouse-move → `update_*_drag()` computes delta, mutates vertices via `StateManager`
 - Mouse-up → `finish_drag()` records `TransformCommand` in history
 
-### `history.py` — Undo/redo
+### `core/history.py` — Undo/redo
 Command Pattern (max 100 commands):
 - `TransformCommand` — stores vertices before/after, replays via `polygon.vertices = …`
 - `CompoundCommand` — groups multiple commands into one entry
 - `HistoryManager` — maintains undo/redo stacks
 
-### `camera.py` — Camera
+### `render/camera.py` — Camera
 - State: `pos`, `yaw`, `pitch`
 - `screen_ray(vx, vy)` — viewport coords → 3D ray direction
 - Movement: Z/S (forward/back), Q/D (strafe), right-drag (rotate), wheel (zoom)
 
-### `math3d.py` — Pure math
+### `utils/math3d.py` — Pure math
 - Vector ops: `vadd`, `vsub`, `vscale`, `dot`, `cross`, `normalize`
 - Intersections: `ray_triangle`, `ray_plane`, `ray_line` (Möller–Trumbore)
 
-### `constants.py`
+### `utils/constants.py`
 - Window: `PANEL_WIDTH`, `VIEW_WIDTH`, `HEIGHT`
 - Camera: `FOV`, `NEAR`, `FAR`, `MOVE_SPEED`, `MOUSE_SENSITIVITY`
 - Assets: `TEXTURE_PATH`, `ATLAS_JSON` — **hardcoded absolute paths** (`C:\Dev\Paris\assets\…`)

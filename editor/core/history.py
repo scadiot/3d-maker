@@ -280,7 +280,7 @@ class DeleteGroupCommand(Command):
         self._parent     = group.parent
         self._parent_idx = (group.parent.children.index(group)
                             if group.parent else 0)
-        from editor.group import all_polygons
+        from editor.core.group import all_polygons
         self._all_polys = all_polygons(group)
 
     def execute(self) -> None:

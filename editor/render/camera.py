@@ -2,8 +2,8 @@
 
 import math
 
-from editor.constants import VIEW_WIDTH, HEIGHT, FOV, MOVE_SPEED, MOUSE_SENSITIVITY
-from editor import math3d
+from editor.utils.constants import VIEW_WIDTH, HEIGHT, FOV, MOVE_SPEED, MOUSE_SENSITIVITY
+from editor.utils import math3d
 
 
 class Camera:

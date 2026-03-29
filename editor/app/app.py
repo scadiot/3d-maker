@@ -14,23 +14,23 @@ from OpenGL.GL import (
 from OpenGL.GL import glOrtho
 from OpenGL.GLU import gluPerspective
 
-from editor.constants import (PANEL_WIDTH, FOV, NEAR, FAR)
-from editor.camera        import Camera
-from editor.scene         import Scene
-from editor.gizmo         import Gizmo
-from editor.view_cube     import ViewCube
-from editor.renderer      import draw_grid
-from editor.state_manager import StateManager
-from editor.history       import HistoryManager
+from editor.utils.constants import (PANEL_WIDTH, FOV, NEAR, FAR)
+from editor.render.camera        import Camera
+from editor.core.scene         import Scene
+from editor.render.gizmo         import Gizmo
+from editor.render.view_cube     import ViewCube
+from editor.render.renderer      import draw_grid
+from editor.core.state_manager import StateManager
+from editor.core.history       import HistoryManager
 
-from editor.app_toolbar   import AppToolbarMixin
-from editor.app_layout    import AppLayoutMixin
-from editor.app_events    import AppEventsMixin
-from editor.app_selection import AppSelectionMixin
-from editor.app_commands  import AppCommandsMixin
-from editor.app_file      import AppFileMixin
-from editor.split_tool    import SplitTool
-from editor.extrude_tool  import ExtrudeTool
+from editor.app.toolbar   import AppToolbarMixin
+from editor.app.layout    import AppLayoutMixin
+from editor.app.events    import AppEventsMixin
+from editor.app.selection import AppSelectionMixin
+from editor.app.commands  import AppCommandsMixin
+from editor.app.file      import AppFileMixin
+from editor.tools.split_tool    import SplitTool
+from editor.tools.extrude_tool  import ExtrudeTool
 
 
 class Viewport3D(OpenGLFrame):

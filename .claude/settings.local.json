@@ -3,7 +3,9 @@
     "allow": [
       "Bash(pip install:*)",
       "Bash(python -m pytest tests/test_state_manager.py -v)",
-      "Bash(python -m pytest tests/ -q)"
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(python -c \":*)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''''c:/Dev/Paris/tools/3D-maker''''\\); from editor.app.app import App; print\\(''''OK''''\\)\")"
     ]
   }
 }

@@ -7,7 +7,7 @@ import os
 import tkinter as tk
 from tkinter import filedialog
 
-from editor.texture_atlas import TextureAtlas
+from editor.utils.texture_atlas import TextureAtlas
 
 
 _BG       = '#16161f'

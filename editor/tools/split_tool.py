@@ -5,11 +5,11 @@ from OpenGL.GL import (
     GL_DEPTH_TEST, GL_LINES,
 )
 
-from editor.tool import Tool
-from editor.group import Polygon, all_polygons
-from editor.math3d import (normalize, cross, vsub, vadd, vscale, dot,
+from editor.tools.tool import Tool
+from editor.core.group import Polygon, all_polygons
+from editor.utils.math3d import (normalize, cross, vsub, vadd, vscale, dot,
                             vlength, ray_plane_intersect, closest_point_on_seg)
-from editor.history import SplitPolygonCommand
+from editor.core.history import SplitPolygonCommand
 
 
 class SplitTool(Tool):

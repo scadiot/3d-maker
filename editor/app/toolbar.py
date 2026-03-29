@@ -4,7 +4,7 @@ import math
 import tkinter as tk
 from PIL import Image, ImageDraw, ImageTk
 
-from editor.constants import FOV, SNAP_VALUES
+from editor.utils.constants import FOV, SNAP_VALUES
 
 
 class AppToolbarMixin:

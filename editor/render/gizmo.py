@@ -12,8 +12,8 @@ from OpenGL.GL import (
     GL_BLEND, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
 )
 
-from editor.constants import GIZMO_MODES, GIZMO_AXES, GIZMO_PLANES, SCALE_COLORS, GIZMO_IDLE_ALPHA
-from editor import math3d
+from editor.utils.constants import GIZMO_MODES, GIZMO_AXES, GIZMO_PLANES, SCALE_COLORS, GIZMO_IDLE_ALPHA
+from editor.utils import math3d
 
 
 # ── Drawing helpers (module-private) ──────────────────────────────────────────
@@ -200,7 +200,7 @@ class Gizmo:
             after   = {p: list(p.vertices) for p in self.drag_before_snapshot}
             changed = any(after[p] != self.drag_before_snapshot[p] for p in after)
             if changed:
-                from editor.history import TransformCommand
+                from editor.core.history import TransformCommand
                 history.record(TransformCommand(state,
                                                 dict(self.drag_before_snapshot),
                                                 after))
@@ -535,7 +535,7 @@ class Gizmo:
     def _find_glued_extra(state, moving_positions, exclude_poly_vi, exclude_polys):
         """Return {(poly, vi): pos} for all scene vertices co-located with any
         position in *moving_positions*, excluding already-tracked pairs/polys."""
-        from editor.group import all_polygons as _all_polys
+        from editor.core.group import all_polygons as _all_polys
         EPS = 1e-5
         result = {}
         for poly in _all_polys(state.root_group):
@@ -556,7 +556,7 @@ class Gizmo:
     @staticmethod
     def _effective_polys(state):
         """Return selected polygons + all polygons from selected groups (deduplicated)."""
-        from editor.group import all_polygons as _all_polys
+        from editor.core.group import all_polygons as _all_polys
         seen = set()
         result = []
         for p in state.selected_polygons:

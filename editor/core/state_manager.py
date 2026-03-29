@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Callable, Literal
 
-from editor.group import Group, Polygon, all_polygons
-from editor.texture_atlas import TextureAtlas
+from editor.core.group import Group, Polygon, all_polygons
+from editor.utils.texture_atlas import TextureAtlas
 
 
 SelectionMode = Literal["polygon", "edge", "vertex"]
@@ -33,7 +33,7 @@ class StateManager:
 
     def __init__(self, root_group: Group) -> None:
         self._root_group: Group = root_group
-        self._current_group: Group = root_group 
+        self._current_group: Group = root_group
         self._selection_mode: SelectionMode = "polygon"
         self._selected_polygons: list[Polygon] = []
         self._selected_edges: list[tuple[Polygon, int]] = []

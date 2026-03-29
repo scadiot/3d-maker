@@ -1,10 +1,10 @@
 """AppCommandsMixin: edit commands (add, delete, duplicate, group, UV…)."""
 
-from editor.group import Group, all_polygons
-from editor.history import (AddPolygonsCommand, DeletePolygonsCommand,
+from editor.core.group import Group, all_polygons
+from editor.core.history import (AddPolygonsCommand, DeletePolygonsCommand,
                              PolyDataCommand, GroupCommand, UngroupCommand,
                              AddGroupCommand, DeleteGroupCommand, CompoundCommand)
-from editor.math3d import normalize, cross, vsub, dot
+from editor.utils.math3d import normalize, cross, vsub, dot
 
 
 class AppCommandsMixin:
@@ -147,11 +147,11 @@ class AppCommandsMixin:
         self._record_added_polygons(before_ids)
 
     def _cmd_project_info(self):
-        from editor.project_info_dialog import ProjectInfoDialog
+        from editor.ui.project_info_dialog import ProjectInfoDialog
         dlg = ProjectInfoDialog(self.root, self.state)
         if dlg._confirmed:
             self._update_title()
 
     def _cmd_textures_atlas(self):
-        from editor.texture_atlas_dialog import TextureAtlasDialog
+        from editor.ui.texture_atlas_dialog import TextureAtlasDialog
         TextureAtlasDialog(self.root, self.state)

@@ -2,9 +2,9 @@
 
 import json
 
-from editor.texture_atlas import TextureAtlas
-from editor import math3d
-from editor.group import Group
+from editor.utils.texture_atlas import TextureAtlas
+from editor.utils import math3d
+from editor.core.group import Group
 
 
 def save_json(scene, path: str) -> None:

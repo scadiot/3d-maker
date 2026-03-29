@@ -1,6 +1,6 @@
 """AppSelectionMixin: ray picking and selection application."""
 
-from editor.group import all_polygons
+from editor.core.group import all_polygons
 
 
 class AppSelectionMixin:

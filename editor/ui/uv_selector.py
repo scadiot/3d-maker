@@ -27,7 +27,7 @@ from OpenGL.GL import (
     glPointSize, glLineWidth,
 )
 
-from editor.constants import PANEL_WIDTH
+from editor.utils.constants import PANEL_WIDTH
 
 _ZOOM_MIN = 1.0
 _ZOOM_MAX = 32.0

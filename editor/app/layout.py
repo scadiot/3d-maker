@@ -2,10 +2,10 @@
 
 import tkinter as tk
 
-from editor.constants import PANEL_WIDTH, VIEW_WIDTH, HEIGHT
-from editor.uv_selector          import UVSelector
-from editor.group_panel          import GroupPanel
-from editor.gizmo_position_panel import GizmoPositionPanel
+from editor.utils.constants import PANEL_WIDTH, VIEW_WIDTH, HEIGHT
+from editor.ui.uv_selector          import UVSelector
+from editor.ui.group_panel          import GroupPanel
+from editor.ui.gizmo_position_panel import GizmoPositionPanel
 
 _SEP_WIDTH           = 5
 _PANEL_MIN_WIDTH     = 200
@@ -87,7 +87,7 @@ class AppLayoutMixin:
     # ── Viewport ──────────────────────────────────────────────────────────────
     def _build_viewport(self):
         vw = _TOTAL_CONTENT_WIDTH - self.panel_width - _SEP_WIDTH
-        from editor.app import Viewport3D
+        from editor.app.app import Viewport3D
         self.viewport = Viewport3D(self.root, self, width=vw, height=HEIGHT)
         self.viewport.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.viewport.bind('<FocusIn>',  self._on_viewport_focus_in)

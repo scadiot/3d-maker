@@ -2,7 +2,7 @@
 
 import tkinter as tk
 
-from editor import math3d
+from editor.utils import math3d
 
 
 class GizmoPositionPanel(tk.Frame):
@@ -175,5 +175,5 @@ class GizmoPositionPanel(tk.Frame):
         after = {p: list(p.vertices) for p in before}
         state.notify_polygon_transformed(list(before.keys()))
 
-        from editor.history import TransformCommand
+        from editor.core.history import TransformCommand
         history.record(TransformCommand(state, before, after))
