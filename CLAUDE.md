@@ -171,7 +171,7 @@ Left panel width: resizable via drag separator (100px–700px).
 | Delete | Delete selected |
 | G | Group selected |
 | H | Ungroup selected |
-| R | Rotate UVs |
+| T | Rotate UVs |
 | F | Flip polygon orientation |
 | K | Split selected polygon |
 | W | Align edge centers |
