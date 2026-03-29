@@ -1179,8 +1179,9 @@ class App:
         self._split_origin = verts[0]
         self._splitting_active = True
 
-        # Initial segment position at the hit point
-        pv = dot(vsub(hit, verts[0]), split_perp)
+        # Initial segment position at the hit point (snapped)
+        snap = float(self._snap_var.get())
+        pv = round(dot(vsub(hit, verts[0]), split_perp) / snap) * snap
         self._split_seg = self._compute_split_segment(verts, split_dir, split_perp, verts[0], pv)
 
     def _compute_split_segment(self, verts, split_dir, split_perp, origin, pv):
@@ -1218,7 +1219,8 @@ class App:
         hit = ray_plane_intersect(ray_o, ray_d, verts[0], normal)
         if hit is None:
             return
-        pv = dot(vsub(hit, self._split_origin), self._split_perp)
+        snap = float(self._snap_var.get())
+        pv = round(dot(vsub(hit, self._split_origin), self._split_perp) / snap) * snap
         self._split_seg = self._compute_split_segment(
             verts, self._split_dir, self._split_perp, self._split_origin, pv
         )
@@ -1683,7 +1685,7 @@ class App:
             pt_a, pt_b = self._split_seg
             glDisable(GL_DEPTH_TEST)
             glLineWidth(2.5)
-            glColor3f(0.1, 0.45, 1.0)
+            glColor3f(0.6, 0.1, 1.0)
             glBegin(GL_LINES)
             glVertex3f(*pt_a)
             glVertex3f(*pt_b)
