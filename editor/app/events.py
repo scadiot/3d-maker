@@ -61,6 +61,7 @@ class AppEventsMixin:
         dx = event.x_root - self.pan_last_x
         dy = event.y_root - self.pan_last_y
         if dx or dy:
+            self._exit_ortho()
             self.camera.apply_mouse_look(dx, dy)
             ctypes.windll.user32.SetCursorPos(self.pan_anchor_x, self.pan_anchor_y)
             self.pan_last_x = self.pan_anchor_x

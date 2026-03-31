@@ -431,13 +431,39 @@ class AppToolbarMixin:
         self.state.vertex_glue = not self.state.vertex_glue
         self._btn_vertex_glue.config(bg='#2d4080' if self.state.vertex_glue else '#16161f')
 
+    def _exit_ortho(self):
+        """Exit orthographic mode and update the toolbar button."""
+        if self.camera.ortho:
+            self.camera.ortho = False
+            self._btn_ortho.config(bg='#16161f')
+
     def _toggle_ortho(self):
         self.camera.ortho = not self.camera.ortho
         if self.camera.ortho:
             import math as _math
             dist = _math.sqrt(sum(p**2 for p in self.camera.pos))
             self.camera.ortho_scale = max(dist * _math.tan(_math.radians(FOV / 2)), 0.1)
+            self._snap_camera_to_nearest_axis()
         self._btn_ortho.config(bg='#2d4080' if self.camera.ortho else '#16161f')
+
+    def _snap_camera_to_nearest_axis(self):
+        """Snap camera to the nearest canonical axis view (like clicking the view cube)."""
+        import math as _math
+        px, py, pz = self.camera.pos
+        mag = _math.sqrt(px*px + py*py + pz*pz)
+        if mag < 1e-6:
+            return
+        pos_dir = (px / mag, py / mag, pz / mag)
+        face_normals = {
+            'Right':  ( 1,  0,  0),
+            'Left':   (-1,  0,  0),
+            'Top':    ( 0,  1,  0),
+            'Bottom': ( 0, -1,  0),
+            'Front':  ( 0,  0, -1),
+            'Back':   ( 0,  0,  1),
+        }
+        best_face = max(face_normals, key=lambda f: sum(pos_dir[i] * face_normals[f][i] for i in range(3)))
+        self.view_cube.snap_to_face(best_face, self.camera)
 
     def _toggle_move_gizmo_mode(self):
         if self.gizmo.move_gizmo_mode:
