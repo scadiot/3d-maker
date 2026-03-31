@@ -12,22 +12,33 @@ from OpenGL.GL import (
     glColor3f, glColor4f, glBlendFunc,
     glGenBuffers, glDeleteBuffers, glBindBuffer, glBufferData,
     glEnableClientState, glDisableClientState,
-    glVertexPointer, glTexCoordPointer,
+    glVertexPointer, glNormalPointer, glTexCoordPointer,
     glDrawArrays,
+    glLightfv, glColorMaterial,
     GL_TEXTURE_2D, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR,
     GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
     GL_CULL_FACE, GL_BACK, GL_CW,
     GL_BLEND, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
     GL_DEPTH_TEST,
     GL_ARRAY_BUFFER, GL_DYNAMIC_DRAW, GL_FLOAT,
-    GL_VERTEX_ARRAY, GL_TEXTURE_COORD_ARRAY,
+    GL_VERTEX_ARRAY, GL_NORMAL_ARRAY, GL_TEXTURE_COORD_ARRAY,
     GL_TRIANGLES, GL_LINES, GL_POINTS,
+    GL_LIGHTING, GL_LIGHT0, GL_COLOR_MATERIAL,
+    GL_AMBIENT, GL_DIFFUSE, GL_POSITION,
+    GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE,
 )
 
 from editor.utils.texture_atlas import TextureAtlas
 from editor.utils import math3d
 from editor.utils import serializer
 from editor.core.group import Group, all_polygons, iter_polygons, is_visible, is_locked, iter_ancestors
+
+
+# Directional light — world-space direction (w=0), set after camera transform
+# so it stays fixed in the world regardless of camera orientation.
+_LIGHT_AMBIENT  = (0.30, 0.30, 0.30, 1.0)
+_LIGHT_DIFFUSE  = (0.85, 0.85, 0.85, 1.0)
+_LIGHT_DIR      = (0.50, 1.00, 0.75, 0.0)   # upper-front-right, w=0 → directional
 
 
 # ── Flat views (compatibility with gizmo.py and the rest) ─────────────────────
@@ -564,8 +575,13 @@ class Scene:
             atlas_id = poly_obj.texture_atlas_id if poly_obj.texture_atlas_id is not None else None
             face_buf = polys_by_tex.setdefault(atlas_id, [])
             for i in range(n - 2):
-                for idx in (0, i + 1, i + 2):
-                    face_buf += [v[idx][0], v[idx][1], v[idx][2], uvs[idx][0], uvs[idx][1]]
+                i0, i1, i2 = 0, i + 1, i + 2
+                # Flat face normal — CW winding → cross(e2, e1)
+                e1 = math3d.vsub(v[i1], v[i0])
+                e2 = math3d.vsub(v[i2], v[i0])
+                nx, ny, nz = math3d.normalize(math3d.cross(e2, e1))
+                for idx in (i0, i1, i2):
+                    face_buf += [v[idx][0], v[idx][1], v[idx][2], nx, ny, nz, uvs[idx][0], uvs[idx][1]]
 
             # Outline bucket assignment
             in_locked_group = sel_group_ids and any(
@@ -588,7 +604,7 @@ class Scene:
 
         for atlas_id, face_data in polys_by_tex.items():
             existing = self._face_vbos.get(atlas_id)
-            result   = self._upload_vbo(face_data, existing, 5)
+            result   = self._upload_vbo(face_data, existing, 8)
             if result is not None:
                 self._face_vbos[atlas_id] = result
             elif atlas_id in self._face_vbos:
@@ -666,25 +682,41 @@ class Scene:
             self._rebuild_vbos(sel_poly_ids, sel_edges, sel_verts, sel_group_ids)
 
         # ── Face pass — one glDrawArrays per texture atlas ───────────────────
+        # Lighting is set here, after the camera modelview transform, so the
+        # light direction is expressed in world space and stays fixed.
+        glEnable(GL_LIGHTING)
+        glEnable(GL_LIGHT0)
+        glLightfv(GL_LIGHT0, GL_AMBIENT,  _LIGHT_AMBIENT)
+        glLightfv(GL_LIGHT0, GL_DIFFUSE,  _LIGHT_DIFFUSE)
+        glLightfv(GL_LIGHT0, GL_POSITION, _LIGHT_DIR)
+        glEnable(GL_COLOR_MATERIAL)
+        glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
+
         glEnable(GL_CULL_FACE);  glCullFace(GL_BACK);  glFrontFace(GL_CW)
         glEnable(GL_TEXTURE_2D);  glColor3f(1.0, 1.0, 1.0)
         glEnableClientState(GL_VERTEX_ARRAY)
         glEnableClientState(GL_TEXTURE_COORD_ARRAY)
 
-        stride = 5 * 4   # 5 floats × 4 bytes (x,y,z,u,v interleaved)
+        stride = 8 * 4   # 8 floats × 4 bytes (x,y,z,nx,ny,nz,u,v interleaved)
+        glEnableClientState(GL_NORMAL_ARRAY)
         for atlas_id, (vbo_id, count) in self._face_vbos.items():
             tex_id = self.poly_textures.get(atlas_id, self.poly_texture)
             glBindTexture(GL_TEXTURE_2D, tex_id)
             glBindBuffer(GL_ARRAY_BUFFER, vbo_id)
             glVertexPointer(3, GL_FLOAT, stride, ctypes.c_void_p(0))
-            glTexCoordPointer(2, GL_FLOAT, stride, ctypes.c_void_p(12))
+            glNormalPointer(GL_FLOAT, stride, ctypes.c_void_p(12))
+            glTexCoordPointer(2, GL_FLOAT, stride, ctypes.c_void_p(24))
             glDrawArrays(GL_TRIANGLES, 0, count)
 
+        glDisableClientState(GL_NORMAL_ARRAY)
         glDisableClientState(GL_TEXTURE_COORD_ARRAY)
         glDisableClientState(GL_VERTEX_ARRAY)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glDisable(GL_TEXTURE_2D)
         glDisable(GL_CULL_FACE)
+        glDisable(GL_COLOR_MATERIAL)
+        glDisable(GL_LIGHT0)
+        glDisable(GL_LIGHTING)
 
         # ── Outline pass — VBO draw calls, one per colour bucket ─────────────
         if self._vbo_root or self._vbo_group:
