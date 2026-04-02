@@ -59,6 +59,20 @@ class Tool:
     def update(self, mx: int, my: int) -> None:
         """Called every frame while the tool is active."""
 
+    # ── Toolbar integration ───────────────────────────────────────────────────
+
+    @property
+    def toolbar_button_specs(self) -> list:
+        """Button specs for the second toolbar. Override in subclasses.
+
+        Each spec is a dict with:
+          label:   str       — button text
+          command: callable  — click handler
+          visible: callable  — () -> bool, show/hide button and its separator
+          enabled: callable  — () -> bool, optional, defaults to always enabled
+        """
+        return []
+
     # ── Rendering ─────────────────────────────────────────────────────────────
 
     def draw(self) -> None:

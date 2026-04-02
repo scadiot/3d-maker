@@ -12,6 +12,17 @@ class ExtrudeTool(Tool):
         self._prev_gizmo_mode = 'universal'
         self._history_depth   = 0
 
+    # ── Toolbar integration ───────────────────────────────────────────────────
+
+    @property
+    def toolbar_button_specs(self):
+        def visible():
+            return (self.state.selection_mode == 'edge'
+                    and len(self.state.selected_edges) >= 1
+                    and not self.state.extrusion_mode)
+
+        return [{"label": "Extrude", "command": self.activate, "visible": visible}]
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def activate(self) -> None:

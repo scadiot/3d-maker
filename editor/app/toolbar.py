@@ -412,10 +412,14 @@ class AppToolbarMixin:
         self._sep_edges.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
         self._btn_create_from_edges = add_btn(self._cmd_create_from_edges,
                                               "Create polygon from edges")
-        self._sep_split = tk.Frame(self.toolbar2, width=1, bg='#38384a')
-        self._btn_split = add_btn(self.split_tool.activate, "Split [K]")
-        self._sep_extrude = tk.Frame(self.toolbar2, width=1, bg='#38384a')
-        self._btn_extrude = add_btn(self.extrude_tool.activate, "Extrude")
+
+        self._tool_btn_widgets = []  # list of (sep, btn, spec)
+        for tool in self.tools:
+            for spec in tool.toolbar_button_specs:
+                sep = tk.Frame(self.toolbar2, width=1, bg='#38384a')
+                btn = add_btn(spec["command"], spec["label"])
+                self._tool_btn_widgets.append((sep, btn, spec))
+
         self._sync_toolbar2_btns()
 
     def _on_snap_change(self, *_):
@@ -494,34 +498,18 @@ class AppToolbarMixin:
             else:
                 w.pack_forget()
 
-        one_poly = (self.state.selection_mode == 'polygon'
-                    and len(self.state.selected_polygons) == 1)
-        for w in (self._sep_split, self._btn_split):
-            if one_poly:
-                w.pack(side=tk.LEFT, fill=tk.Y if w is self._sep_split else tk.NONE,
-                       padx=5 if w is self._sep_split else 1,
-                       pady=5 if w is self._sep_split else 2)
+        for sep, btn, spec in self._tool_btn_widgets:
+            if spec["visible"]():
+                sep.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
+                btn.pack(side=tk.LEFT, padx=1, pady=2)
+                enabled_fn = spec.get("enabled", lambda: True)
+                if enabled_fn():
+                    btn.config(state='normal', cursor='hand2', bg='#16161f')
+                else:
+                    btn.config(state='disabled', cursor='', bg=self._BG_DIS)
             else:
-                w.pack_forget()
-        if one_poly:
-            coplanar = self._poly_is_coplanar(self.state.selected_polygons[0])
-            if coplanar:
-                self._btn_split.config(state='normal', cursor='hand2',
-                                       bg='#16161f')
-            else:
-                self._btn_split.config(state='disabled', cursor='',
-                                       bg=self._BG_DIS)
-
-        has_edges = (self.state.selection_mode == 'edge'
-                     and len(self.state.selected_edges) >= 1
-                     and not self.state.extrusion_mode)
-        for w in (self._sep_extrude, self._btn_extrude):
-            if has_edges:
-                w.pack(side=tk.LEFT, fill=tk.Y if w is self._sep_extrude else tk.NONE,
-                       padx=5 if w is self._sep_extrude else 1,
-                       pady=5 if w is self._sep_extrude else 2)
-            else:
-                w.pack_forget()
+                sep.pack_forget()
+                btn.pack_forget()
 
     def _refresh_group_panel(self):
         if hasattr(self, 'group_panel'):

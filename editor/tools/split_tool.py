@@ -23,6 +23,21 @@ class SplitTool(Tool):
         self._split_seg        = None
         self._splitting_active = False
 
+    # ── Toolbar integration ───────────────────────────────────────────────────
+
+    @property
+    def toolbar_button_specs(self):
+        def visible():
+            return (self.state.selection_mode == 'polygon'
+                    and len(self.state.selected_polygons) == 1)
+
+        def enabled():
+            polys = self.state.selected_polygons
+            return bool(polys) and self.app._poly_is_coplanar(polys[0])
+
+        return [{"label": "Split [K]", "command": self.activate,
+                 "visible": visible, "enabled": enabled}]
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def activate(self) -> None:

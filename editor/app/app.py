@@ -81,6 +81,7 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
         # ── Tools ─────────────────────────────────────────────────────────────
         self.split_tool   = SplitTool(self)
         self.extrude_tool = ExtrudeTool(self)
+        self.tools        = [self.split_tool, self.extrude_tool]
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
     def run(self):
