@@ -8,6 +8,9 @@ class Tool:
     for lifecycle (activate/deactivate), input (mouse/keyboard), and rendering.
     """
 
+    name: str = ""              # Override in subclasses with a unique identifier
+    captures_mouse_down: bool = False  # Set to True if the tool intercepts mouse-down
+
     def __init__(self, app):
         self.app = app
 

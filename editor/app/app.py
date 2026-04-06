@@ -79,9 +79,13 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
         self.last_time         = time.time()
         self._viewport_focused = False
         # ── Tools ─────────────────────────────────────────────────────────────
-        self.split_tool   = SplitTool(self)
-        self.extrude_tool = ExtrudeTool(self)
-        self.tools        = [self.split_tool, self.extrude_tool]
+        self.tools = [SplitTool(self), ExtrudeTool(self)]
+
+    @property
+    def active_tool(self):
+        """Returns the currently active tool, or None if no tool is active."""
+        name = self.state.active_tool_name
+        return next((t for t in self.tools if t.name == name), None)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
     def run(self):
@@ -135,9 +139,12 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
         dt  = now - self.last_time
         self.last_time = now
 
-        if self.state.polygon_splitting_mode:
-            self.split_tool.update(self.mouse_x, self.mouse_y)
-        elif self.state.gizmo_enable and self.gizmo.dragging_axis and self.mouse_btn1:
+        if self.state.tool_active:
+            t = self.active_tool
+            if t:
+                t.update(self.mouse_x, self.mouse_y)
+
+        if self.state.gizmo_enable and self.gizmo.dragging_axis and self.mouse_btn1:
             self.gizmo.update_drag(self.mouse_x, self.mouse_y, self.state, self.camera)
 
         if self.state.gizmo_enable:
@@ -175,4 +182,7 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
         self.view_cube.draw(self.camera, vw, vh)
 
         # ── Tool overlays ──────────────────────────────────────────────────
-        self.split_tool.draw()
+        if self.state.tool_active:
+            t = self.active_tool
+            if t:
+                t.draw()

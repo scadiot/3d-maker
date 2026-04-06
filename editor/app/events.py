@@ -32,7 +32,10 @@ class AppEventsMixin:
 
     def _on_mouse_up(self, event):
         self.mouse_btn1 = False
-        self.split_tool.on_mouse_up(event.x, event.y)
+        if self.state.tool_active:
+            t = self.active_tool
+            if t:
+                t.on_mouse_up(event.x, event.y)
         self.gizmo.finish_drag(self.history, self.state)
 
     def _on_mouse_wheel(self, event):
@@ -100,7 +103,7 @@ class AppEventsMixin:
         if key == 'c':
             self._cmd_duplicate()
 
-        if key == 'space' and (self.scene.selected_indices or self.state.selected_groups or self.state.selected_edges or self.state.selected_vertices) and not self.state.extrusion_mode and not self.gizmo.move_gizmo_mode:
+        if key == 'space' and (self.scene.selected_indices or self.state.selected_groups or self.state.selected_edges or self.state.selected_vertices) and not self.state.tool_active and not self.gizmo.move_gizmo_mode:
             self.gizmo.cycle_mode()
             self._sync_gizmo_btns()
 
@@ -123,19 +126,20 @@ class AppEventsMixin:
             one_poly = (self.state.selection_mode == 'polygon'
                         and len(self.state.selected_polygons) == 1)
             if one_poly and self._poly_is_coplanar(self.state.selected_polygons[0]):
-                self.split_tool.activate()
+                t = next((t for t in self.tools if t.name == 'split'), None)
+                if t:
+                    t.activate()
 
-        if key == 'return':
-            if self.state.polygon_splitting_mode:
-                self.split_tool.confirm()
-            elif self.state.extrusion_mode:
-                self.extrude_tool.confirm()
+        if key == 'return' and self.state.tool_active:
+            t = self.active_tool
+            if t:
+                t.confirm()
 
         if key == 'escape':
-            if self.state.polygon_splitting_mode:
-                self.split_tool.cancel()
-            elif self.state.extrusion_mode:
-                self.extrude_tool.cancel()
+            if self.state.tool_active:
+                t = self.active_tool
+                if t:
+                    t.cancel()
             else:
                 self.state.clear_selection()
 

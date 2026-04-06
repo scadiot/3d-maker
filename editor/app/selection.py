@@ -116,9 +116,11 @@ class AppSelectionMixin:
 
     # ── Mouse-down dispatch (3D viewport) ────────────────────────────────────
     def _handle_mouse_down_3d(self, mx, my):
-        if self.state.polygon_splitting_mode:
-            self.split_tool.on_mouse_down(mx, my)
-            return
+        if self.state.tool_active:
+            t = self.active_tool
+            if t and t.captures_mouse_down:
+                t.on_mouse_down(mx, my)
+                return
 
         ctrl_held = 'shift_l' in self.keys_pressed  # Shift for multi-select
         multi     = len(self.scene.selected_indices) > 1 or bool(self.state.selected_groups)

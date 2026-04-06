@@ -14,6 +14,9 @@ from editor.core.history import SplitPolygonCommand
 
 class SplitTool(Tool):
 
+    name = 'split'
+    captures_mouse_down = True
+
     def __init__(self, app):
         super().__init__(app)
         self._split_polygon    = None
@@ -41,12 +44,14 @@ class SplitTool(Tool):
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def activate(self) -> None:
-        self.state.polygon_splitting_mode = True
+        self.state.active_tool_name = self.name
+        self.state.tool_active = True
         self.state.selection_enable = False
         self.state.gizmo_enable = False
 
     def deactivate(self) -> None:
-        self.state.polygon_splitting_mode = False
+        self.state.tool_active = False
+        self.state.active_tool_name = ""
         self.state.selection_enable = True
         self.state.gizmo_enable = True
         self._split_polygon    = None
@@ -210,7 +215,7 @@ class SplitTool(Tool):
     # ── Rendering ─────────────────────────────────────────────────────────────
 
     def draw(self) -> None:
-        if not self.state.polygon_splitting_mode or self._split_seg is None:
+        if not self.state.tool_active or self._split_seg is None:
             return
         pt_a, pt_b = self._split_seg
         glDisable(GL_DEPTH_TEST)

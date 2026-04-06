@@ -45,8 +45,8 @@ class StateManager:
         self._project_name: str = ""   # project name (without extension)
         self._project_path: str = ""   # absolute path to the project JSON file
         self._vertex_glue: bool = False
-        self._polygon_splitting_mode: bool = False
-        self._extrusion_mode: bool = False
+        self._tool_active: bool = False
+        self._active_tool_name: str = ""
         self._textures_atlases: list[TextureAtlas] = []
         self._selection_enable: bool = True
         self._gizmo_enable: bool = True
@@ -121,22 +121,22 @@ class StateManager:
         self._vertex_glue = value
 
     @property
-    def polygon_splitting_mode(self) -> bool:
-        """When True, the editor is in polygon-splitting mode."""
-        return self._polygon_splitting_mode
+    def tool_active(self) -> bool:
+        """When True, a tool is currently active."""
+        return self._tool_active
 
-    @polygon_splitting_mode.setter
-    def polygon_splitting_mode(self, value: bool) -> None:
-        self._polygon_splitting_mode = value
+    @tool_active.setter
+    def tool_active(self, value: bool) -> None:
+        self._tool_active = value
 
     @property
-    def extrusion_mode(self) -> bool:
-        """When True, the editor is in edge-extrusion mode."""
-        return self._extrusion_mode
+    def active_tool_name(self) -> str:
+        """Name of the currently active tool, or empty string if none."""
+        return self._active_tool_name
 
-    @extrusion_mode.setter
-    def extrusion_mode(self, value: bool) -> None:
-        self._extrusion_mode = value
+    @active_tool_name.setter
+    def active_tool_name(self, value: str) -> None:
+        self._active_tool_name = value
 
     @property
     def selection_enable(self) -> bool:

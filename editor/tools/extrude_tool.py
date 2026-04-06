@@ -7,6 +7,8 @@ from editor.core.history import ExtrudeEdgesCommand
 
 class ExtrudeTool(Tool):
 
+    name = 'extrude'
+
     def __init__(self, app):
         super().__init__(app)
         self._prev_gizmo_mode = 'universal'
@@ -19,7 +21,7 @@ class ExtrudeTool(Tool):
         def visible():
             return (self.state.selection_mode == 'edge'
                     and len(self.state.selected_edges) >= 1
-                    and not self.state.extrusion_mode)
+                    and not self.state.tool_active)
 
         return [{"label": "Extrude", "command": self.activate, "visible": visible}]
 
@@ -61,7 +63,8 @@ class ExtrudeTool(Tool):
         self.state.set_selection(edges=new_top_edges, polygons=[])
 
         self._prev_gizmo_mode = self.gizmo.mode
-        self.state.extrusion_mode    = True
+        self.state.active_tool_name  = self.name
+        self.state.tool_active       = True
         self.state.selection_enable  = False
         self.gizmo.mode              = 'universal'
         self.app._sync_gizmo_btns()
@@ -69,7 +72,8 @@ class ExtrudeTool(Tool):
 
     def confirm(self) -> None:
         """Keep the extruded faces and exit extrusion mode (Enter key)."""
-        self.state.extrusion_mode   = False
+        self.state.tool_active      = False
+        self.state.active_tool_name = ""
         self.state.selection_enable = True
         self.gizmo.mode             = self._prev_gizmo_mode
         self.app._sync_gizmo_btns()
@@ -79,7 +83,8 @@ class ExtrudeTool(Tool):
         """Undo all extrusion actions and exit extrusion mode (Escape key)."""
         while self.history.depth > self._history_depth:
             self.history.undo()
-        self.state.extrusion_mode   = False
+        self.state.tool_active      = False
+        self.state.active_tool_name = ""
         self.state.selection_enable = True
         self.gizmo.mode             = self._prev_gizmo_mode
         self.app._sync_gizmo_btns()

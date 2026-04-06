@@ -479,8 +479,10 @@ class AppToolbarMixin:
         self._sync_gizmo_btns()
 
     def _on_selection_changed(self):
-        if self.state.extrusion_mode and not self.state.selected_edges:
-            self.extrude_tool.confirm()
+        if self.state.tool_active and self.state.active_tool_name == 'extrude' and not self.state.selected_edges:
+            t = self.active_tool
+            if t:
+                t.confirm()
             return
         self.gizmo.position_override = None
         self.gizmo.move_gizmo_mode   = False
@@ -518,7 +520,7 @@ class AppToolbarMixin:
     def _sync_gizmo_btns(self):
         BG    = '#16161f'
         BG_ON = '#2d4080'
-        extruding  = self.state.extrusion_mode
+        extruding  = self.state.tool_active and self.state.active_tool_name == 'extrude'
         move_gizmo = self.gizmo.move_gizmo_mode
         for mode, (btn, bg_off, bg_on) in self._gizmo_btns.items():
             if extruding or (move_gizmo and mode in ('scale',)):
