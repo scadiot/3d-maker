@@ -83,9 +83,10 @@ class AppToolbarMixin:
         SZ      = 22           # icon size in px
         BTN_SZ  = 34           # taille bouton
 
-        self._icons       = []   # keep PhotoImage objects alive
-        self._gizmo_btns  = {}   # gizmo buttons for highlighting
-        self._sel_btns    = {}   # selection mode buttons
+        self._icons           = []   # keep PhotoImage objects alive
+        self._gizmo_btns      = {}   # gizmo buttons for highlighting
+        self._sel_btns        = {}   # selection mode buttons
+        self._grid_close_bind = None
 
         self.toolbar = tk.Frame(self.root, bg=BG, height=BTN_SZ + 4)
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -376,6 +377,19 @@ class AppToolbarMixin:
 
         self._btn_ortho = add_btn(make_icon(ico_ortho), self._toggle_ortho,
                                   "Orthographic view")
+        add_sep()
+
+        def ico_grid_plane(d, s, c):
+            # Grid lines
+            for i in [4, s // 2, s - 4]:
+                d.line([i, 4, i, s - 4], fill=c, width=1)
+                d.line([4, i, s - 4, i], fill=c, width=1)
+            # Small arrow pointing down-right to suggest a plane
+            d.line([s - 6, s // 2, s - 6, s - 6], fill=c, width=2)
+            d.line([s // 2, s - 6, s - 6, s - 6], fill=c, width=2)
+
+        self._btn_grid = add_btn(make_icon(ico_grid_plane), self._toggle_grid_panel,
+                                 "Grid settings")
 
     # ── Second toolbar ────────────────────────────────────────────────────────
     def _build_toolbar2(self):
@@ -541,3 +555,139 @@ class AppToolbarMixin:
     def _sync_sel_mode_btns(self):
         for mode, (btn, bg_off, bg_on) in self._sel_btns.items():
             btn.config(bg=bg_on if self.state.selection_mode == mode else bg_off)
+
+    # ── Grid panel ────────────────────────────────────────────────────────────
+    def _toggle_grid_panel(self):
+        if self._grid_panel_win is not None:
+            self._close_grid_panel()
+            return
+
+        BG       = '#1e1e2e'
+        BG_FRAME = '#16161f'
+        BG_ON    = '#2d4080'
+        FG       = '#c8c8d8'
+
+        btn_ref = self._btn_grid
+        x = btn_ref.winfo_rootx()
+        y = btn_ref.winfo_rooty() + btn_ref.winfo_height() + 2
+
+        win = tk.Toplevel(self.root)
+        win.wm_overrideredirect(True)
+        win.wm_geometry(f"+{x}+{y}")
+        win.config(bg='#38384a')
+        self._grid_panel_win = win
+
+        inner = tk.Frame(win, bg=BG, padx=10, pady=10)
+        inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+
+        # ── Plane selector ────────────────────────────────────────────────────
+        tk.Label(inner, text="Grid plane", bg=BG, fg=FG,
+                 font=('Segoe UI', 8, 'bold')).pack(anchor='w', pady=(0, 4))
+
+        plane_frame = tk.Frame(inner, bg=BG)
+        plane_frame.pack(fill=tk.X, pady=(0, 8))
+
+        axis_btns = {}
+
+        def set_plane(axis):
+            self.grid_plane = axis
+            for a, b in axis_btns.items():
+                b.config(bg=BG_ON if a == axis else BG_FRAME)
+
+        for axis in ('X', 'Y', 'Z'):
+            b = tk.Button(
+                plane_frame, text=axis,
+                bg=BG_ON if self.grid_plane == axis else BG_FRAME,
+                fg=FG, relief='flat', bd=0,
+                font=('Segoe UI', 9, 'bold'),
+                width=3, pady=4, cursor='hand2',
+                command=lambda a=axis: set_plane(a),
+            )
+            b.pack(side=tk.LEFT, padx=2)
+            axis_btns[axis] = b
+
+        # ── Offset ────────────────────────────────────────────────────────────
+        tk.Label(inner, text="Offset", bg=BG, fg=FG,
+                 font=('Segoe UI', 8, 'bold')).pack(anchor='w', pady=(0, 4))
+
+        def fmt_offset(v):
+            return str(int(v)) if v == int(v) else str(v)
+
+        offset_var = tk.StringVar(value=fmt_offset(self.grid_offset))
+
+        offset_row = tk.Frame(inner, bg=BG)
+        offset_row.pack(anchor='w')
+
+        entry = tk.Entry(
+            offset_row, textvariable=offset_var, width=7,
+            bg=BG_FRAME, fg=FG, insertbackground=FG,
+            relief='solid', bd=1, highlightthickness=0,
+            font=('Segoe UI', 9),
+        )
+        entry.pack(side=tk.LEFT, padx=(0, 2))
+
+        def step_offset(direction):
+            snap = self.gizmo.translate_snap
+            new_val = round((self.grid_offset + direction * snap) / snap) * snap
+            self.grid_offset = new_val
+            offset_var.set(fmt_offset(new_val))
+
+        for symbol, delta in (('-', -1), ('+', 1)):
+            tk.Button(
+                offset_row, text=symbol,
+                bg=BG_FRAME, fg=FG,
+                relief='flat', bd=0,
+                font=('Segoe UI', 10, 'bold'),
+                width=2, pady=1, cursor='hand2',
+                command=lambda d=delta: step_offset(d),
+            ).pack(side=tk.LEFT, padx=1)
+
+        def on_offset(*_):
+            try:
+                val  = float(offset_var.get())
+                snap = self.gizmo.translate_snap
+                self.grid_offset = round(val / snap) * snap
+            except ValueError:
+                pass
+
+        offset_var.trace_add('write', on_offset)
+
+        self._btn_grid.config(bg='#2d4080')
+
+        # Close when clicking outside the popup
+        def on_root_click(event):
+            try:
+                wx = win.winfo_rootx()
+                wy = win.winfo_rooty()
+                ww = win.winfo_width()
+                wh = win.winfo_height()
+                if not (wx <= event.x_root <= wx + ww and wy <= event.y_root <= wy + wh):
+                    self._close_grid_panel()
+            except Exception:
+                self._close_grid_panel()
+
+        self._grid_close_bind = self.root.bind('<ButtonPress>', on_root_click, add='+')
+
+        win.bind('<Destroy>', lambda _: self._on_grid_panel_destroyed())
+
+    def _close_grid_panel(self):
+        if self._grid_panel_win is not None:
+            win = self._grid_panel_win
+            self._grid_panel_win = None
+            try:
+                win.destroy()
+            except Exception:
+                pass
+        if self._btn_grid is not None:
+            self._btn_grid.config(bg='#16161f')
+        if hasattr(self, '_grid_close_bind') and self._grid_close_bind:
+            try:
+                self.root.unbind('<ButtonPress>', self._grid_close_bind)
+            except Exception:
+                pass
+            self._grid_close_bind = None
+
+    def _on_grid_panel_destroyed(self):
+        self._grid_panel_win = None
+        if self._btn_grid is not None:
+            self._btn_grid.config(bg='#16161f')

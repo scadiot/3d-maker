@@ -73,6 +73,10 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
         self._right_resize_start_pw = PANEL_WIDTH
         self._btn_move_gizmo   = None
         self._btn_ortho        = None
+        self._btn_grid         = None
+        self._grid_panel_win   = None
+        self.grid_plane        = 'Y'
+        self.grid_offset       = 0.0
         self.history           = HistoryManager()
         self.keys_pressed      = set()
         self.mouse_btn1        = False
@@ -177,7 +181,7 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
         glRotatef(-self.camera.yaw,   0, 1, 0)
         glTranslatef(-self.camera.pos[0], -self.camera.pos[1], -self.camera.pos[2])
 
-        draw_grid(30, 1)
+        draw_grid(30, 1, plane=self.grid_plane, offset=self.grid_offset)
         self.scene.draw()
         if self.state.gizmo_enable:
             self.gizmo.draw(self.state, self.camera)
