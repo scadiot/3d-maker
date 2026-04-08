@@ -112,7 +112,15 @@ class CircleTool(Tool):
 
     def _compute_hit(self, mx: int, my: int):
         ray_o, ray_d = self.camera.pick_ray(mx, my)
-        return ray_plane_intersect(ray_o, ray_d, _PLANE_PT, _PLANE_N)
+        hit = ray_plane_intersect(ray_o, ray_d, _PLANE_PT, _PLANE_N)
+        if hit is None:
+            return None
+        snap = float(self.app._snap_var.get())
+        return (
+            round(hit[0] / snap) * snap,
+            0.0,
+            round(hit[2] / snap) * snap,
+        )
 
     def update(self, mx: int, my: int) -> None:
         if not self._locked:
