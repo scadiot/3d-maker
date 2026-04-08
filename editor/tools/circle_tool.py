@@ -11,9 +11,9 @@ from .tool import Tool
 from ..utils.math3d import ray_plane_intersect
 
 
-_N       = 20    # border points per circle
-_R_INNER = 5.0   # default inner radius (m)
-_R_OUTER = 7.0   # default outer radius (m)
+_N_DEFAULT = 20   # default number of quads (segments)
+_R_INNER   = 5.0  # default inner radius (m)
+_R_OUTER   = 7.0  # default outer radius (m)
 
 _PLANE_PT = (0.0, 0.0, 0.0)
 _PLANE_N  = (0.0, 1.0, 0.0)
@@ -34,6 +34,7 @@ class CircleTool(Tool):
 
     def __init__(self, app):
         super().__init__(app)
+        self._n      = _N_DEFAULT
         self._r_inner = _R_INNER
         self._r_outer = _R_OUTER
 
@@ -66,13 +67,14 @@ class CircleTool(Tool):
         if self._preview is None:
             return
         cx, _, cz = self._preview
-        inner = _ring_points(cx, cz, self._r_inner, _N)
-        outer = _ring_points(cx, cz, self._r_outer, _N)
+        n = self._n
+        inner = _ring_points(cx, cz, self._r_inner, n)
+        outer = _ring_points(cx, cz, self._r_outer, n)
         group = self.state.current_group
-        for k in range(_N):
-            k1 = (k + 1) % _N
+        for k in range(n):
+            k1 = (k + 1) % n
             verts = [inner[k], outer[k], outer[k1], inner[k1]]
-            uvs   = [(k/_N, 0.0), (k/_N, 1.0), ((k+1)/_N, 1.0), ((k+1)/_N, 0.0)]
+            uvs   = [(k/n, 0.0), (k/n, 1.0), ((k+1)/n, 1.0), ((k+1)/n, 0.0)]
             group.add_polygon(verts, uvs)
         self.scene._emit_scene_changed("polygon_added", polygon=None, group=group)
         self._locked = False
@@ -97,8 +99,9 @@ class CircleTool(Tool):
         if self._preview is None:
             return
         cx, _, cz = self._preview
-        inner = _ring_points(cx, cz, self._r_inner, _N)
-        outer = _ring_points(cx, cz, self._r_outer, _N)
+        n = self._n
+        inner = _ring_points(cx, cz, self._r_inner, n)
+        outer = _ring_points(cx, cz, self._r_outer, n)
 
         glDisable(GL_DEPTH_TEST)
         glEnable(GL_BLEND)
@@ -107,8 +110,8 @@ class CircleTool(Tool):
         # Filled ring
         glColor4f(1.0, 0.5, 0.0, 0.35)
         glBegin(GL_QUADS)
-        for k in range(_N):
-            k1 = (k + 1) % _N
+        for k in range(n):
+            k1 = (k + 1) % n
             glVertex3f(*inner[k])
             glVertex3f(*outer[k])
             glVertex3f(*outer[k1])
@@ -169,6 +172,28 @@ class CircleTool(Tool):
                          font=('Segoe UI', 8), width=8)
             e.pack(side=tk.LEFT)
 
+        def add_int_field(label, get, set_):
+            row = tk.Frame(body, bg=BG)
+            row.pack(fill=tk.X, pady=3)
+            tk.Label(row, text=label, bg=BG, fg=FG_DIM,
+                     font=('Segoe UI', 8), width=13, anchor='w').pack(side=tk.LEFT)
+            var = tk.StringVar(value=str(get()))
+
+            def on_int_change(*_):
+                try:
+                    v = int(var.get())
+                    if v >= 3:
+                        set_(v)
+                except ValueError:
+                    pass
+
+            var.trace_add('write', on_int_change)
+            e = tk.Entry(row, textvariable=var, bg='#2a2a3a', fg=FG,
+                         insertbackground=FG, relief='flat', bd=4,
+                         font=('Segoe UI', 8), width=8)
+            e.pack(side=tk.LEFT)
+
+        add_int_field("Segments:", lambda: self._n, lambda v: setattr(self, '_n', v))
         add_field("Inner radius:", lambda: self._r_inner, lambda v: setattr(self, '_r_inner', v))
         add_field("Outer radius:", lambda: self._r_outer, lambda v: setattr(self, '_r_outer', v))
         return True
