@@ -31,6 +31,7 @@ from editor.app.commands  import AppCommandsMixin
 from editor.app.file      import AppFileMixin
 from editor.tools.split_tool    import SplitTool
 from editor.tools.extrude_tool  import ExtrudeTool
+from editor.tools.add_quad_tool import AddQuadTool
 
 
 class Viewport3D(OpenGLFrame):
@@ -79,7 +80,7 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
         self.last_time         = time.time()
         self._viewport_focused = False
         # ── Tools ─────────────────────────────────────────────────────────────
-        self.tools = [SplitTool(self), ExtrudeTool(self)]
+        self.tools = [SplitTool(self), ExtrudeTool(self), AddQuadTool(self)]
 
     @property
     def active_tool(self):
