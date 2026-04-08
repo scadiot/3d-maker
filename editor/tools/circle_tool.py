@@ -1,4 +1,5 @@
 import math
+import tkinter as tk
 
 from OpenGL.GL import (
     glEnable, glDisable, glBlendFunc, glBegin, glEnd, glVertex3f, glColor4f, glLineWidth,
@@ -11,8 +12,8 @@ from ..utils.math3d import ray_plane_intersect
 
 
 _N       = 20    # border points per circle
-_R_INNER = 5.0   # inner radius (m)
-_R_OUTER = 7.0   # outer radius (m)
+_R_INNER = 5.0   # default inner radius (m)
+_R_OUTER = 7.0   # default outer radius (m)
 
 _PLANE_PT = (0.0, 0.0, 0.0)
 _PLANE_N  = (0.0, 1.0, 0.0)
@@ -30,6 +31,11 @@ def _ring_points(cx, cz, radius, n):
 class CircleTool(Tool):
     name = 'circle'
     captures_mouse_down = True
+
+    def __init__(self, app):
+        super().__init__(app)
+        self._r_inner = _R_INNER
+        self._r_outer = _R_OUTER
 
     def activate(self) -> None:
         self._preview = None
@@ -60,8 +66,8 @@ class CircleTool(Tool):
         if self._preview is None:
             return
         cx, _, cz = self._preview
-        inner = _ring_points(cx, cz, _R_INNER, _N)
-        outer = _ring_points(cx, cz, _R_OUTER, _N)
+        inner = _ring_points(cx, cz, self._r_inner, _N)
+        outer = _ring_points(cx, cz, self._r_outer, _N)
         group = self.state.current_group
         for k in range(_N):
             k1 = (k + 1) % _N
@@ -91,8 +97,8 @@ class CircleTool(Tool):
         if self._preview is None:
             return
         cx, _, cz = self._preview
-        inner = _ring_points(cx, cz, _R_INNER, _N)
-        outer = _ring_points(cx, cz, _R_OUTER, _N)
+        inner = _ring_points(cx, cz, self._r_inner, _N)
+        outer = _ring_points(cx, cz, self._r_outer, _N)
 
         glDisable(GL_DEPTH_TEST)
         glEnable(GL_BLEND)
@@ -124,6 +130,48 @@ class CircleTool(Tool):
 
         glDisable(GL_BLEND)
         glEnable(GL_DEPTH_TEST)
+
+    def build_panel(self, parent) -> bool:
+        BG     = '#1a1a21'
+        BG_HDR = '#111118'
+        FG     = '#c8c8d8'
+        FG_DIM = '#888899'
+        SEP    = '#2a2a3a'
+
+        # Header
+        tk.Frame(parent, height=1, bg=SEP).pack(fill=tk.X)
+        tk.Label(parent, text='Ring settings', bg=BG_HDR, fg=FG,
+                 font=('Segoe UI', 8, 'bold'), anchor='w',
+                 padx=8, pady=5).pack(fill=tk.X)
+        tk.Frame(parent, height=1, bg=SEP).pack(fill=tk.X)
+
+        body = tk.Frame(parent, bg=BG, padx=8, pady=6)
+        body.pack(fill=tk.X)
+
+        def add_field(label, get, set_):
+            row = tk.Frame(body, bg=BG)
+            row.pack(fill=tk.X, pady=3)
+            tk.Label(row, text=label, bg=BG, fg=FG_DIM,
+                     font=('Segoe UI', 8), width=13, anchor='w').pack(side=tk.LEFT)
+            var = tk.StringVar(value=str(get()))
+
+            def on_change(*_):
+                try:
+                    v = float(var.get())
+                    if v > 0:
+                        set_(v)
+                except ValueError:
+                    pass
+
+            var.trace_add('write', on_change)
+            e = tk.Entry(row, textvariable=var, bg='#2a2a3a', fg=FG,
+                         insertbackground=FG, relief='flat', bd=4,
+                         font=('Segoe UI', 8), width=8)
+            e.pack(side=tk.LEFT)
+
+        add_field("Inner radius:", lambda: self._r_inner, lambda v: setattr(self, '_r_inner', v))
+        add_field("Outer radius:", lambda: self._r_outer, lambda v: setattr(self, '_r_outer', v))
+        return True
 
     @property
     def toolbar_button_specs(self):

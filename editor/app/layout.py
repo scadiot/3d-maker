@@ -34,7 +34,28 @@ class AppLayoutMixin:
             self.right_panel, self.state, self.gizmo, self.history)
         self.gizmo_position_panel.pack(fill=tk.X)
 
+        self.tool_panel = tk.Frame(self.right_panel, bg='#1a1a21')
+        # packed on demand by _refresh_tool_panel
+
         self.group_panel = GroupPanel(self.right_panel, self.scene, self)
+        self.group_panel.pack(fill=tk.BOTH, expand=True)
+
+    def _refresh_tool_panel(self):
+        """Rebuild the contextual tool panel (shown between gizmo panel and group panel)."""
+        for w in self.tool_panel.winfo_children():
+            w.destroy()
+
+        tool = self.active_tool
+        has_content = tool is not None and tool.build_panel(self.tool_panel)
+
+        # Re-pack in correct order so the tool_panel stays between the two panels
+        self.gizmo_position_panel.pack_forget()
+        self.tool_panel.pack_forget()
+        self.group_panel.pack_forget()
+
+        self.gizmo_position_panel.pack(fill=tk.X)
+        if has_content:
+            self.tool_panel.pack(fill=tk.X)
         self.group_panel.pack(fill=tk.BOTH, expand=True)
 
     # ── Statusbar ─────────────────────────────────────────────────────────────

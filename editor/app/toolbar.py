@@ -513,6 +513,9 @@ class AppToolbarMixin:
                 sep.pack_forget()
                 btn.pack_forget()
 
+        if hasattr(self, 'tool_panel'):
+            self._refresh_tool_panel()
+
     def _refresh_group_panel(self):
         if hasattr(self, 'group_panel'):
             self.group_panel.refresh()

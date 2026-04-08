@@ -76,6 +76,16 @@ class Tool:
         """
         return []
 
+    # ── Side panel ────────────────────────────────────────────────────────────
+
+    def build_panel(self, parent) -> bool:
+        """Populate *parent* (a tk.Frame) with tool-specific widgets.
+
+        Called each time this tool becomes active.  Return True if at least one
+        widget was added (the panel is then shown); return False to hide it.
+        """
+        return False
+
     # ── Rendering ─────────────────────────────────────────────────────────────
 
     def draw(self) -> None:
