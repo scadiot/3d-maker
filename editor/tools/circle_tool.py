@@ -16,29 +16,20 @@ _R_INNER     = 5.0   # default inner radius (m)
 _R_OUTER     = 7.0   # default outer radius (m)
 _ARC_DEFAULT = 360.0 # default arc angle (degrees)
 
-_PLANE_PT = (0.0, 0.0, 0.0)
-_PLANE_N  = (0.0, 1.0, 0.0)
 
-
-def _ring_points(cx, cz, radius, n):
-    """Full circle: n evenly spaced points."""
-    return [
-        (cx + radius * math.cos(2 * math.pi * i / n),
-         0.0,
-         cz + radius * math.sin(2 * math.pi * i / n))
-        for i in range(n)
-    ]
-
-
-def _arc_points(cx, cz, radius, n, arc_deg):
-    """Open arc: n+1 points spanning arc_deg degrees."""
-    arc_rad = math.radians(arc_deg)
-    return [
-        (cx + radius * math.cos(arc_rad * i / n),
-         0.0,
-         cz + radius * math.sin(arc_rad * i / n))
-        for i in range(n + 1)
-    ]
+def _make_ring_points(center, radius, angles, plane):
+    """Generate 3D ring points on the given plane ('X', 'Y', or 'Z')."""
+    cx, cy, cz = center
+    pts = []
+    for a in angles:
+        c, s = math.cos(a), math.sin(a)
+        if plane == 'Y':
+            pts.append((cx + radius * c, cy, cz + radius * s))
+        elif plane == 'X':
+            pts.append((cx, cy + radius * c, cz + radius * s))
+        else:  # Z
+            pts.append((cx + radius * c, cy + radius * s, cz))
+    return pts
 
 
 class CircleTool(Tool):
@@ -80,20 +71,29 @@ class CircleTool(Tool):
     def _is_full_circle(self):
         return abs(self._arc_angle - 360.0) < 0.01
 
-    def _get_ring_points(self, cx, cz):
-        n = self._n
-        if self._is_full_circle():
-            return (_ring_points(cx, cz, self._r_inner, n),
-                    _ring_points(cx, cz, self._r_outer, n))
-        return (_arc_points(cx, cz, self._r_inner, n, self._arc_angle),
-                _arc_points(cx, cz, self._r_outer, n, self._arc_angle))
+    def _grid_plane(self):
+        return self.app.grid_plane
+
+    def _grid_offset(self):
+        return self.app.grid_offset
+
+    def _get_ring_points(self, center):
+        n      = self._n
+        plane  = self._grid_plane()
+        full   = self._is_full_circle()
+        if full:
+            angles = [2 * math.pi * i / n for i in range(n)]
+        else:
+            arc_rad = math.radians(self._arc_angle)
+            angles  = [arc_rad * i / n for i in range(n + 1)]
+        return (_make_ring_points(center, self._r_inner, angles, plane),
+                _make_ring_points(center, self._r_outer, angles, plane))
 
     def confirm(self) -> None:
         if self._preview is None:
             return
-        cx, _, cz = self._preview
         n = self._n
-        inner, outer = self._get_ring_points(cx, cz)
+        inner, outer = self._get_ring_points(self._preview)
         group = self.state.current_group
         if self._is_full_circle():
             for k in range(n):
@@ -111,16 +111,22 @@ class CircleTool(Tool):
         self._preview = None
 
     def _compute_hit(self, mx: int, my: int):
+        plane  = self._grid_plane()
+        offset = self._grid_offset()
+        pt_map = {'Y': (0, offset, 0), 'X': (offset, 0, 0), 'Z': (0, 0, offset)}
+        n_map  = {'Y': (0, 1, 0),      'X': (1, 0, 0),      'Z': (0, 0, 1)}
         ray_o, ray_d = self.camera.pick_ray(mx, my)
-        hit = ray_plane_intersect(ray_o, ray_d, _PLANE_PT, _PLANE_N)
+        hit = ray_plane_intersect(ray_o, ray_d, pt_map[plane], n_map[plane])
         if hit is None:
             return None
         snap = float(self.app._snap_var.get())
-        return (
-            round(hit[0] / snap) * snap,
-            0.0,
-            round(hit[2] / snap) * snap,
-        )
+        x, y, z = hit
+        if plane == 'Y':
+            return (round(x / snap) * snap, offset, round(z / snap) * snap)
+        elif plane == 'X':
+            return (offset, round(y / snap) * snap, round(z / snap) * snap)
+        else:  # Z
+            return (round(x / snap) * snap, round(y / snap) * snap, offset)
 
     def update(self, mx: int, my: int) -> None:
         if not self._locked:
@@ -136,9 +142,8 @@ class CircleTool(Tool):
     def draw(self) -> None:
         if self._preview is None:
             return
-        cx, _, cz = self._preview
         n = self._n
-        inner, outer = self._get_ring_points(cx, cz)
+        inner, outer = self._get_ring_points(self._preview)
         full = self._is_full_circle()
 
         glDisable(GL_DEPTH_TEST)
