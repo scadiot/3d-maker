@@ -122,10 +122,10 @@ class AppSelectionMixin:
                 t.on_mouse_down(mx, my)
                 return
 
-        ctrl_held = 'shift_l' in self.keys_pressed  # Shift for multi-select
+        ctrl_held = 'shift_l' in self.keys_pressed or 'shift_r' in self.keys_pressed  # Shift for multi-select
         multi     = len(self.scene.selected_indices) > 1 or bool(self.state.selected_groups)
         sel_mode  = self.state.selection_mode
-        gizmo_on  = self.state.gizmo_enable
+        gizmo_on  = self.state.gizmo_enable and not ctrl_held
 
         if sel_mode == 'edge' and self.state.selected_edges:
             if gizmo_on:

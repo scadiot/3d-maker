@@ -150,10 +150,12 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
             if t:
                 t.update(self.mouse_x, self.mouse_y)
 
-        if self.state.gizmo_enable and self.gizmo.dragging_axis and self.mouse_btn1:
+        shift_held = 'shift_l' in self.keys_pressed or 'shift_r' in self.keys_pressed
+
+        if self.state.gizmo_enable and not shift_held and self.gizmo.dragging_axis and self.mouse_btn1:
             self.gizmo.update_drag(self.mouse_x, self.mouse_y, self.state, self.camera)
 
-        if self.state.gizmo_enable:
+        if self.state.gizmo_enable and not shift_held:
             self.gizmo.update_hover(self.mouse_x, self.mouse_y, self.state, self.camera)
 
         self.camera.apply_movement(self.keys_pressed, dt, panning=self.panning)
@@ -183,7 +185,8 @@ class App(AppToolbarMixin, AppLayoutMixin, AppEventsMixin,
 
         draw_grid(30, 1, plane=self.grid_plane, offset=self.grid_offset)
         self.scene.draw()
-        if self.state.gizmo_enable:
+        shift_held = 'shift_l' in self.keys_pressed or 'shift_r' in self.keys_pressed
+        if self.state.gizmo_enable and not shift_held:
             self.gizmo.draw(self.state, self.camera)
         self.view_cube.draw(self.camera, vw, vh)
 

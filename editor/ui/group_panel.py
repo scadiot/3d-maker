@@ -553,7 +553,8 @@ class GroupPanel(tk.Frame):
         if not indices:
             return
         if self._state is not None:
-            shift_held = 'shift_l' in getattr(self._app, 'keys_pressed', set())
+            kp = getattr(self._app, 'keys_pressed', set())
+            shift_held = 'shift_l' in kp or 'shift_r' in kp
             if not shift_held:
                 self._state.selected_groups = []
         self._scene.selected_indices = indices
